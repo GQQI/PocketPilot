@@ -38,8 +38,11 @@ export interface ProviderConfig {
   endpoint: string;
 }
 
+export type ThemeMode = "light" | "dark";
+
 export interface Settings {
   locale: "zh" | "en";
+  theme: ThemeMode;
   demoMode: boolean;
   activeProviderId: string;
   workspacePath: string;
@@ -137,6 +140,36 @@ export interface FileContent {
   path: string;
   language: string;
   content: string;
+}
+
+export interface FsEntry {
+  name: string;
+  path: string;
+  kind: "dir" | "file";
+}
+
+export interface FsListing {
+  path: string;
+  parent: string | null;
+  entries: FsEntry[];
+  demo: boolean;
+}
+
+export interface HostView {
+  name: string;
+  platform: string;
+  port: number;
+  urls: string[];
+  workspacePath: string;
+  demoMode: boolean;
+  paired: boolean;
+  loopback: boolean;
+  pairingCode?: string;
+}
+
+export interface PairResult {
+  token: string;
+  host: HostView;
 }
 
 export interface QueueItem {

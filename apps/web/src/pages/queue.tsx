@@ -35,7 +35,7 @@ export function QueuePage() {
         {waiting.length === 0 ? <p className="text-sm text-mute">{t("queue.empty")}</p> : null}
         {waiting.map((item) => (
           <article key={item.id} className="row-card px-4 py-3">
-            <div className="text-xs text-lime">{providerName(item.providerId)} · {item.status}</div>
+            <div className="text-xs text-accent">{providerName(item.providerId)} · {item.status}</div>
             <p className="mt-1 text-sm">{item.prompt}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button size="sm" disabled={runningId !== null} onClick={() => {

@@ -1,14 +1,19 @@
 import { createHub, HubError, resolveInside } from "@mobileagent/agent-core";
 import { serve } from "@hono/node-server";
+import { getConnInfo } from "@hono/node-server/conninfo";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import type { Context } from "hono";
 
 const hub = createHub();
 const app = new Hono();
 const staticDir = process.env.MOBILEAGENT_STATIC;
+const port = Number(process.env.MOBILEAGENT_PORT ?? 47232);
+const hostname = process.env.HOST ?? "127.0.0.1";
 
 app.onError((error, c) => {
   if (error instanceof HubError) return c.json({ error: error.message, code: error.code }, error.status as 400);
@@ -16,8 +21,45 @@ app.onError((error, c) => {
   return c.json({ error: "internal error" }, 500);
 });
 
+app.use("*", cors({
+  origin: (origin) => origin || "*",
+  allowHeaders: ["authorization", "content-type"],
+  allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+}));
+
+app.use("/api/*", async (c, next) => {
+  if (c.req.method === "OPTIONS") return next();
+  const loopback = isLoopback(c);
+  const pathname = new URL(c.req.url).pathname;
+  const open = pathname === "/api/health" || pathname === "/api/host" || pathname === "/api/pair";
+  if (!open && !loopback && !hub.tokenMatches(c.req.header("authorization"))) {
+    return c.json({ error: "pairing required", code: "pair" }, 401);
+  }
+  await next();
+});
+
 app.get("/api/bootstrap", (c) => c.json(hub.bootstrap()));
 app.get("/api/health", (c) => c.json({ ok: true, demoMode: hub.bootstrap().settings.demoMode }));
+app.get("/api/host", (c) => c.json(hub.hostInfo({
+  loopback: isLoopback(c),
+  authorized: hub.tokenMatches(c.req.header("authorization")),
+  port,
+  urls: phoneUrls(port, Boolean(staticDir)),
+})));
+app.post("/api/pair", async (c) => {
+  const body = await c.req.json().catch(() => ({ code: "" }));
+  const token = hub.pair(String(body.code ?? ""));
+  return c.json({
+    token,
+    host: hub.hostInfo({
+      loopback: isLoopback(c),
+      authorized: true,
+      port,
+      urls: phoneUrls(port, Boolean(staticDir)),
+    }),
+  });
+});
+app.get("/api/fs", (c) => c.json(hub.listDirs(c.req.query("path") ?? "")));
 
 app.post("/api/settings", async (c) => c.json(hub.updateSettings(await c.req.json())));
 app.post("/api/providers/:id/secret", async (c) => {
@@ -77,10 +119,10 @@ if (staticDir) {
   });
 }
 
-const port = Number(process.env.MOBILEAGENT_PORT ?? 47232);
-const hostname = process.env.HOST ?? "127.0.0.1";
 serve({ fetch: app.fetch, port, hostname }, () => {
-  console.log(`MobileAgent bridge http://${hostname}:${port}`);
+  console.log("MobileAgent host is running on this PC");
+  for (const url of phoneUrls(port, Boolean(staticDir))) console.log(`  ${url}`);
+  console.log(`  pairing code ${hub.pairingCode()}`);
 });
 
 async function sseFrom(c: Context, source: AsyncIterable<unknown>) {
@@ -100,6 +142,28 @@ async function sseFrom(c: Context, source: AsyncIterable<unknown>) {
       await stream.writeSSE({ data: JSON.stringify(next.value) });
     }
   });
+}
+
+function isLoopback(c: Context): boolean {
+  try {
+    const address = getConnInfo(c).remote.address ?? "";
+    return address === "127.0.0.1" || address === "::1" || address.endsWith("127.0.0.1");
+  } catch {
+    return false;
+  }
+}
+
+function phoneUrls(bridgePort: number, servingUi: boolean): string[] {
+  const uiPort = servingUi ? bridgePort : Number(process.env.MOBILEAGENT_UI_PORT ?? 47231);
+  const target = Number.isFinite(uiPort) && uiPort > 0 ? uiPort : bridgePort;
+  const hosts = new Set<string>(["127.0.0.1"]);
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (entry.internal || entry.family !== "IPv4") continue;
+      hosts.add(entry.address);
+    }
+  }
+  return [...hosts].map((host) => `http://${host}:${target}`);
 }
 
 function resolveStatic(root: string, urlPath: string): string | null {

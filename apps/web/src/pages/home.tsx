@@ -1,7 +1,9 @@
-import type { HealthState } from "@mobileagent/protocol";
-import { useState } from "react";
+import type { HealthState, HostView } from "@mobileagent/protocol";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { DirectoryPicker } from "@/components/directory-picker";
 import { Mark } from "@/components/shell";
+import { Button, Modal } from "@/components/ui";
 import { api } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import type { CopyKey } from "@/lib/i18n";
@@ -15,75 +17,52 @@ const healthKey: Record<HealthState, CopyKey> = {
 };
 
 export function HomePage() {
-  const { data, t, blurb, selectProvider, replace } = useApp();
+  const { data, t, blurb, selectProvider } = useApp();
   const navigate = useNavigate();
-  const [checking, setChecking] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [agentsOpen, setAgentsOpen] = useState(false);
+  const [host, setHost] = useState<HostView | null>(null);
+  useEffect(() => {
+    void api.host().then(setHost).catch(() => setHost(null));
+  }, [data?.settings.workspacePath, data?.settings.demoMode]);
+
   if (!data) return null;
   const active = data.settings.activeProviderId;
   const provider = data.providers.find((item) => item.meta.id === active) ?? data.providers[0];
   const sessions = data.sessions.filter((session) => session.providerId === active);
   const current = sessions[0];
-  const project = data.projects.find((item) => item.id === current?.projectId);
+  const folder = data.settings.workspacePath;
 
   return (
-    <div data-testid="home" className="app-scroll h-full overflow-y-auto px-4 pb-6 md:px-8">
-      <h1 className="display text-[2.6rem] leading-none">{t("home.title")}</h1>
-      <p className="mt-3 max-w-xl text-mute">{t("home.subtitle")}</p>
-      <p className="mt-2 text-sm text-lime">{healthSummary(data.providers.map((item) => item.health.state), t)}</p>
+    <div data-testid="home" className="app-scroll h-full overflow-y-auto px-4 pb-8 md:px-8">
+      <h1 className="display text-3xl leading-tight">{t("home.title")}</h1>
+      <p className="mt-3 max-w-xl text-sm leading-6 text-mute">{t("home.subtitle")}</p>
 
-      {current && provider ? (
-        <section className="now-card mt-5">
-          <div className="kicker">{t("home.now")}</div>
+      <section className="panel mt-6 p-4">
+        <div className="text-xs text-mute">{t("home.computer")}</div>
+        <h2 className="mt-1 text-lg font-medium">{host?.name ?? "…"}</h2>
+        <p className="mt-1 text-sm text-mute">{host?.paired ? t("settings.pairHint") : t("settings.phoneHelp")}</p>
+        <div className="mt-4 text-xs text-mute">{t("home.directory")}</div>
+        <p className="mt-1 break-all text-sm">{folder || t("home.noDirectory")}</p>
+        <Button className="mt-4" variant="soft" onClick={() => setPicking(true)}>{t("home.pickDirectory")}</Button>
+      </section>
+
+      {provider ? (
+        <section className="panel mt-4 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-mute">{t("home.roster", { n: data.providers.length })}</div>
+            <button type="button" className="text-sm text-accent" data-testid="open-agents" onClick={() => setAgentsOpen(true)}>{t("home.changeAgent")}</button>
+          </div>
           <div className="mt-3 flex items-center gap-3">
             <Mark monogram={provider.meta.monogram} accent={provider.meta.accent} />
             <div>
-              <div className="text-sm text-mute">{provider.meta.name}</div>
-              <h2 className="display text-3xl leading-tight">{current.title}</h2>
+              <h2 className="text-lg font-medium">{provider.meta.name}</h2>
+              <p className="text-sm text-mute">{t(healthKey[provider.health.state])} · {blurb(provider.meta.id)}</p>
             </div>
           </div>
-          <p className="mt-3 text-sm text-ivory/80">{current.preview}</p>
-          <div className="mt-4 flex items-center justify-between gap-3 text-xs text-mute">
-            <span>{project?.name} · {formatTime(current.updatedAt, t)}</span>
-            <button type="button" className="rounded-full bg-lime px-3 py-2 text-sm font-medium text-ink" onClick={() => navigate(`/chat/${current.id}`)}>
-              {t("home.continue")}
-            </button>
-          </div>
+          <p className="mt-3 text-sm leading-6 text-mute">{t("home.outputHint")}</p>
         </section>
       ) : null}
-
-      <div className="mt-6 flex items-center justify-between">
-        <h2 className="text-sm text-mute">{t("home.agents")}</h2>
-        <button
-          type="button"
-          className="text-sm text-lime disabled:opacity-40"
-          disabled={checking}
-          onClick={() => {
-            setChecking(true);
-            void api.probeAll().then(replace).finally(() => setChecking(false));
-          }}
-        >
-          {t("home.recheck")}
-        </button>
-      </div>
-      <div data-testid="agent-switcher" className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-3">
-        {data.providers.map((item) => (
-          <button
-            key={item.meta.id}
-            type="button"
-            className={item.meta.id === active ? "agent-card agent-card-active" : "agent-card"}
-            onClick={() => void selectProvider(item.meta.id)}
-          >
-            <div className="flex items-center gap-2">
-              <Mark monogram={item.meta.monogram} accent={item.meta.accent} />
-              <div className="min-w-0">
-                <div className="text-sm font-medium leading-tight">{item.meta.name}</div>
-                <div className="text-xs text-mute">{t(healthKey[item.health.state])} · {item.health.latencyMs ?? "–"} ms</div>
-              </div>
-            </div>
-            <p className="mt-3 text-xs leading-5 text-mute">{blurb(item.meta.id)}</p>
-          </button>
-        ))}
-      </div>
 
       <h2 className="mt-6 text-sm text-mute">{t("home.recent")}</h2>
       <div className="mt-3 space-y-2">
@@ -97,18 +76,35 @@ export function HomePage() {
             <p className="mt-1 truncate text-sm text-mute">{session.preview}</p>
           </button>
         ))}
+        {current ? (
+          <Button className="mt-2" onClick={() => navigate(`/chat/${current.id}`)}>{t("home.continue")}</Button>
+        ) : null}
       </div>
+
+      <Modal open={agentsOpen} onOpenChange={setAgentsOpen} title={t("home.pickAgent")}>
+        <div data-testid="agent-switcher" className="space-y-2">
+          {data.providers.map((item) => (
+            <button
+              key={item.meta.id}
+              type="button"
+              className={item.meta.id === active ? "agent-card agent-card-active w-full" : "agent-card w-full"}
+              onClick={() => {
+                void selectProvider(item.meta.id).then(() => setAgentsOpen(false));
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <Mark monogram={item.meta.monogram} accent={item.meta.accent} />
+                <div className="min-w-0 text-left">
+                  <div className="text-sm font-medium">{item.meta.name}</div>
+                  <div className="text-xs text-mute">{t(healthKey[item.health.state])} · {item.meta.cli}</div>
+                  <p className="mt-1 text-xs leading-5 text-mute">{blurb(item.meta.id)}</p>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </Modal>
+      <DirectoryPicker open={picking} onOpenChange={setPicking} />
     </div>
   );
-}
-
-function healthSummary(states: HealthState[], t: (key: CopyKey, vars?: Record<string, string | number>) => string) {
-  const tally = { healthy: 0, degraded: 0, offline: 0, standby: 0 };
-  for (const state of states) tally[state] += 1;
-  return [
-    tally.healthy ? t("home.healthy", { n: tally.healthy }) : "",
-    tally.degraded ? t("home.degraded", { n: tally.degraded }) : "",
-    tally.offline ? t("home.offline", { n: tally.offline }) : "",
-    tally.standby ? t("home.standby", { n: tally.standby }) : "",
-  ].filter(Boolean).join(" · ");
 }

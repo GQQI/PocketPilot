@@ -1,6 +1,6 @@
 import type { Bootstrap } from "@mobileagent/protocol";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api } from "./api";
+import { ApiError, api } from "./api";
 import { blurbs, copy, hints, suggestions, type CopyKey } from "./i18n";
 
 interface AppContextValue {
@@ -17,6 +17,8 @@ interface AppContextValue {
   hint: (id: string) => string;
   ideas: (id: string) => string[];
   locale: "zh" | "en";
+  needsPair: boolean;
+  pair: (code: string, origin?: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -26,14 +28,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [needsPair, setNeedsPair] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       setData(await api.bootstrap());
       setError(null);
+      setNeedsPair(false);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "offline");
+      if (caught instanceof ApiError && (caught.code === "pair" || caught.status === 401)) {
+        setNeedsPair(true);
+        setError(null);
+      } else {
+        setNeedsPair(false);
+        setError(caught instanceof Error ? caught.message : "offline");
+      }
     } finally {
       setLoading(false);
     }
@@ -50,9 +60,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [notice]);
 
   const locale = data?.settings.locale ?? "zh";
+  const theme = data?.settings.theme === "dark" ? "dark" : "light";
   useEffect(() => {
     document.documentElement.lang = locale === "zh" ? "zh" : "en";
   }, [locale]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#161513" : "#f3f0ea");
+  }, [theme]);
 
   const value = useMemo<AppContextValue>(() => ({
     data,
@@ -74,7 +89,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     hint: (id: string) => hints[locale][id] ?? hints.zh[id] ?? "",
     ideas: (id: string) => suggestions[locale][id] ?? suggestions.zh.cursor ?? [],
     locale,
-  }), [data, error, loading, locale, notice, refresh]);
+    needsPair,
+    pair: async (code: string, origin?: string) => {
+      await api.pair(code, origin);
+      await refresh();
+    },
+  }), [data, error, loading, locale, needsPair, notice, refresh]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

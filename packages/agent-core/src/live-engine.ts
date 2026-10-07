@@ -31,6 +31,7 @@ export interface LiveContext {
   model: string;
   endpoint: string;
   env: NodeJS.ProcessEnv;
+  locale: "zh" | "en";
 }
 
 interface LiveOptions {
@@ -165,7 +166,19 @@ export class LiveEngine {
       yield { type: "done" };
     } catch (error) {
       session.status = "error";
-      yield { type: "error", message: error instanceof Error ? error.message : "cli failed" };
+      const message = explainCliError(error, ctx);
+      const body = [output.trim(), message].filter(Boolean).join("\n");
+      const assistant: ChatMessage = {
+        id: `${session.id}_a_${Date.now().toString(36)}`,
+        role: "assistant",
+        createdAt: new Date().toISOString(),
+        blocks: [{ type: "text", text: body || message }],
+      };
+      this.state.messages[session.id].push(assistant);
+      session.updatedAt = assistant.createdAt;
+      session.messageCount = this.state.messages[session.id].length;
+      session.preview = body.replace(/\s+/g, " ").slice(0, 80);
+      yield { type: "error", message: body || message };
     } finally {
       if (session.status === "running") session.status = "idle";
       this.running.delete(sessionId);
@@ -306,7 +319,7 @@ export class LiveEngine {
       name: root ? path.basename(root) : "workspace",
       path: root,
       branch: "",
-      summary: root ? "本机目录" : "还没有填写项目路径",
+      summary: root ? "这台电脑上的目录" : "还没有选择电脑上的目录",
       language: "",
       updatedAt: new Date().toISOString(),
       changes: [],
@@ -318,6 +331,16 @@ export class LiveEngine {
 
 export function liveProjectId(providerId: string): string {
   return `live__${providerId}`;
+}
+
+function explainCliError(error: unknown, ctx: LiveContext): string {
+  const raw = error instanceof Error ? error.message : "cli failed";
+  const missing = raw.includes("ENOENT") || raw.toLowerCase().includes("not found");
+  if (!missing) return raw;
+  const cmd = ctx.cliPath;
+  return ctx.locale === "en"
+    ? `Cannot find ${cmd} on this PC. Install that CLI on the computer. The phone only forwards the prompt.`
+    : `这台电脑上找不到 ${cmd}。请把这个 CLI 装在电脑上，手机只负责把指令转发过去。`;
 }
 
 function collect(cmd: string, args: string[], env: NodeJS.ProcessEnv, cwd: string, timeoutMs: number): Promise<{ code: number | null; stdout: string; stderr: string; error?: string }> {

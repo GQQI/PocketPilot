@@ -1,5 +1,6 @@
-import type { ProviderConfig, ProviderView } from "@mobileagent/protocol";
+import type { HostView, ProviderConfig, ProviderView } from "@mobileagent/protocol";
 import { useEffect, useState } from "react";
+import { DirectoryPicker } from "@/components/directory-picker";
 import { Button, Input, Toggle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/store";
@@ -10,6 +11,10 @@ export function SettingsPage() {
   const [workspacePath, setWorkspacePath] = useState("");
   const [demoMode, setDemoMode] = useState(true);
   const [keys, setKeys] = useState<Record<string, string>>({});
+  const [host, setHost] = useState<HostView | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [pairCode, setPairCode] = useState("");
+  const [bridgeUrl, setBridgeUrl] = useState("");
 
   useEffect(() => {
     if (!data) return;
@@ -17,6 +22,10 @@ export function SettingsPage() {
     setWorkspacePath(data.settings.workspacePath);
     setDemoMode(data.settings.demoMode);
   }, [data]);
+
+  useEffect(() => {
+    void api.host().then(setHost).catch(() => setHost(null));
+  }, [data?.settings.demoMode, data?.settings.workspacePath]);
 
   if (!data) return null;
 
@@ -26,8 +35,38 @@ export function SettingsPage() {
 
   return (
     <div data-testid="settings" className="app-scroll h-full overflow-y-auto px-4 pb-8 md:px-8">
-      <h1 className="display text-4xl">{t("settings.title")}</h1>
-      <section className="panel mt-5 p-4">
+      <h1 className="display text-3xl">{t("settings.title")}</h1>
+      <section className="panel mt-5 p-4" data-testid="theme-toggle">
+        <h2 className="font-medium">{t("settings.theme")}</h2>
+        <div className="mt-3 flex gap-2">
+          <Button type="button" size="sm" variant={data.settings.theme === "light" ? "primary" : "soft"} onClick={() => void api.saveSettings({ theme: "light" }).then(replace)}>{t("settings.themeLight")}</Button>
+          <Button type="button" size="sm" variant={data.settings.theme === "dark" ? "primary" : "soft"} onClick={() => void api.saveSettings({ theme: "dark" }).then(replace)}>{t("settings.themeDark")}</Button>
+        </div>
+      </section>
+      <section className="panel mt-4 p-4" data-testid="host-connect">
+        <h2 className="font-medium">{t("settings.phone")}</h2>
+        <p className="mt-1 text-sm leading-6 text-mute">{t("settings.phoneHelp")}</p>
+        <ul className="mt-3 space-y-1 text-sm">
+          {(host?.urls ?? []).map((url) => <li key={url} className="break-all">{url}</li>)}
+        </ul>
+        <div className="mt-4 text-xs text-mute">{t("settings.pairCode")}</div>
+        {host?.pairingCode ? <p className="mt-1 text-2xl font-medium tracking-wide">{host.pairingCode}</p> : <p className="mt-1 text-sm text-mute">{t("settings.pairRemote")}</p>}
+        <p className="mt-2 text-xs text-mute">{t("settings.pairHint")}</p>
+        <label className="mt-4 block text-xs text-mute">{t("settings.bridgeUrl")}</label>
+        <Input className="mt-1" value={bridgeUrl} placeholder={t("settings.bridgePh")} onChange={(event) => setBridgeUrl(event.target.value)} />
+        <label className="mt-3 block text-xs text-mute">{t("settings.pairCode")}</label>
+        <Input className="mt-1" value={pairCode} autoCapitalize="characters" placeholder={t("settings.pairPh")} onChange={(event) => setPairCode(event.target.value)} />
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button size="sm" disabled={pairCode.trim().length < 4} onClick={() => void api.pair(pairCode, bridgeUrl).then(() => api.bootstrap()).then((next) => {
+            replace(next);
+            setPairCode("");
+            setNotice(t("settings.saved"));
+            void api.host().then(setHost);
+          }).catch(() => setNotice(t("settings.pairRemote")))}>{t("settings.connect")}</Button>
+          <Button size="sm" variant="ghost" onClick={() => { api.forgetHost(); setNotice(t("settings.saved")); }}>{t("settings.forget")}</Button>
+        </div>
+      </section>
+      <section className="panel mt-4 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="font-medium">{t("settings.demo")}</h2>
@@ -44,6 +83,7 @@ export function SettingsPage() {
         </div>
         <label className="mt-4 block text-xs text-mute">{t("settings.workspace")}</label>
         <Input className="mt-2" value={workspacePath} placeholder={t("settings.workspacePh")} onChange={(event) => setWorkspacePath(event.target.value)} />
+        <Button className="mt-3" variant="soft" type="button" onClick={() => setPicking(true)}>{t("settings.dirBrowse")}</Button>
         <Button className="mt-4" onClick={() => void api.saveSettings({ demoMode, workspacePath, providers: configs }).then((next) => {
           replace(next);
           setNotice(t("settings.saved"));
@@ -52,7 +92,7 @@ export function SettingsPage() {
 
       <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-3">
         {data.providers.map((provider) => (
-          <a key={provider.meta.id} href={`#provider-${provider.meta.id}`} className="rounded-2xl border border-white/10 px-3 py-2 text-sm">
+          <a key={provider.meta.id} href={`#provider-${provider.meta.id}`} className="rounded-2xl border border-line bg-panel px-3 py-2 text-sm">
             {provider.meta.name}
           </a>
         ))}
@@ -81,6 +121,7 @@ export function SettingsPage() {
         <p className="mt-1 text-sm text-mute">{t("settings.resetHelp")}</p>
         <Button className="mt-3" variant="danger" onClick={() => void api.resetDemo().then(replace)}>{t("settings.reset")}</Button>
       </section>
+      <DirectoryPicker open={picking} onOpenChange={setPicking} />
     </div>
   );
 }
@@ -112,7 +153,7 @@ function ProviderCard({
         <Toggle checked={config.enabled} label={t("settings.enabled")} onCheckedChange={(enabled) => onConfig({ enabled })} />
       </div>
       <p className="mt-3 text-sm text-mute">{hint(provider.meta.id)}</p>
-      <a className="mt-2 inline-block text-sm text-lime" href={provider.meta.docsUrl} target="_blank" rel="noreferrer">{t("settings.docs")}</a>
+      <a className="mt-2 inline-block text-sm text-accent" href={provider.meta.docsUrl} target="_blank" rel="noreferrer">{t("settings.docs")}</a>
       <label className="mt-4 block text-xs text-mute">{t("settings.cli")}</label>
       <Input className="mt-1" value={config.cliPath} onChange={(event) => onConfig({ cliPath: event.target.value })} />
       <label className="mt-3 block text-xs text-mute">{t("settings.model")}</label>

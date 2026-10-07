@@ -16,7 +16,7 @@ export function ProjectsPage() {
     <div data-testid="projects" className="app-scroll h-full overflow-y-auto px-4 pb-6 md:px-8">
       <div className="flex items-end justify-between gap-3">
         <h1 className="display text-4xl">{t("projects.title")}</h1>
-        <button type="button" className="text-sm text-lime" onClick={() => setAll((value) => !value)}>
+        <button type="button" className="text-sm text-accent" onClick={() => setAll((value) => !value)}>
           {all ? t("projects.mine") : t("projects.all")}
         </button>
       </div>
@@ -31,7 +31,7 @@ export function ProjectsPage() {
                 <span className="text-xs text-mute">{provider?.meta.name}</span>
               </div>
               <p className="mt-1 text-sm text-mute">{project.summary}</p>
-              <p className="mt-2 text-xs text-lime">{project.branch || "—"} · {project.changes.length} · {t("projects.stats", { files: project.stats.files, loc: project.stats.loc })}</p>
+              <p className="mt-2 text-xs text-mute">{project.branch || "—"} · {project.changes.length} · {t("projects.stats", { files: project.stats.files, loc: project.stats.loc })}</p>
             </button>
           );
         })}
@@ -71,13 +71,13 @@ export function ProjectPage() {
       <button type="button" className="text-sm text-mute" onClick={() => navigate("/projects")}>{t("projects.back")}</button>
       <h1 className="display mt-2 text-4xl">{project.name}</h1>
       <p className="mt-2 text-sm text-mute">{project.path}</p>
-      <p className="mt-1 text-sm text-lime">{project.branch} · {t("projects.stats", { files: project.stats.files, loc: project.stats.loc })}</p>
+      <p className="mt-1 text-sm text-mute">{project.branch} · {t("projects.stats", { files: project.stats.files, loc: project.stats.loc })}</p>
 
       <section className="panel mt-4 p-4">
         <h2 className="text-sm text-mute">{t("projects.changes")}</h2>
         {project.changes.length === 0 ? <p className="mt-2 text-sm">{t("projects.clean")}</p> : (
           <ul className="mt-2 space-y-1 text-sm">
-            {project.changes.map((change) => <li key={change.path}><span className="text-lime">{change.status}</span> {change.path}</li>)}
+            {project.changes.map((change) => <li key={change.path}><span className="text-accent">{change.status}</span> {change.path}</li>)}
           </ul>
         )}
         {data.settings.demoMode && project.changes.length > 0 ? (
@@ -106,7 +106,7 @@ export function ProjectPage() {
               <li key={entry.path}>
                 <button
                   type="button"
-                  className="w-full truncate rounded-xl px-2 py-2 text-left text-sm hover:bg-white/5"
+                  className="w-full truncate rounded-xl px-2 py-2 text-left text-sm hover:bg-soft"
                   onClick={() => {
                     if (entry.kind === "dir") setParams({ dir: entry.path });
                     else setParams(dir ? { dir, file: entry.path } : { file: entry.path });

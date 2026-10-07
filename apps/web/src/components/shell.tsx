@@ -1,6 +1,8 @@
 import { FolderTree, LayoutGrid, ListOrdered, MessageCircle, Settings } from "lucide-react";
 import { NavLink } from "react-router";
 import type { ReactNode } from "react";
+import { useState } from "react";
+import { Button, Input } from "@/components/ui";
 import { useApp } from "@/lib/store";
 import type { CopyKey } from "@/lib/i18n";
 
@@ -13,7 +15,7 @@ const links: { to: string; key: CopyKey; icon: typeof LayoutGrid }[] = [
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { data, loading, error, notice, refresh, t, locale } = useApp();
+  const { data, loading, error, notice, needsPair, refresh, t, locale } = useApp();
   return (
     <div className="relative h-dvh">
       <div className="mx-auto flex h-full w-full max-w-[1240px] flex-col md:flex-row">
@@ -27,12 +29,14 @@ export function Shell({ children }: { children: ReactNode }) {
               <div className="px-4 pt-16 md:px-8">
                 <h1 className="display text-4xl">{t("common.offline")}</h1>
                 <p className="mt-3 max-w-md text-mute">{t("common.offlineHelp")}</p>
-                <button type="button" className="mt-6 rounded-full bg-lime px-4 py-2 text-sm font-medium text-ink" onClick={() => void refresh()}>
+                <button type="button" className="mt-6 rounded-full bg-accent px-4 py-2 text-sm font-medium text-on" onClick={() => void refresh()}>
                   {t("common.retry")}
                 </button>
               </div>
             ) : loading && !data ? (
               <div className="px-4 pt-10 text-mute md:px-8">{t("common.loading")}</div>
+            ) : needsPair && !data ? (
+              <PairGate />
             ) : (
               children
             )}
@@ -51,6 +55,28 @@ export function Shell({ children }: { children: ReactNode }) {
         </nav>
       </div>
       {notice ? <div className="notice">{notice}</div> : null}
+    </div>
+  );
+}
+
+function PairGate() {
+  const { t, pair } = useApp();
+  const [code, setCode] = useState("");
+  const [origin, setOrigin] = useState("");
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="px-4 pt-10 md:px-8">
+      <h1 className="display text-3xl">{t("pair.title")}</h1>
+      <p className="mt-3 max-w-md text-sm leading-6 text-mute">{t("pair.help")}</p>
+      <label className="mt-6 block text-xs text-mute">{t("pair.url")}</label>
+      <Input className="mt-2" value={origin} placeholder={t("settings.bridgePh")} onChange={(event) => setOrigin(event.target.value)} />
+      <label className="mt-4 block text-xs text-mute">{t("pair.code")}</label>
+      <Input className="mt-2" value={code} autoCapitalize="characters" placeholder={t("settings.pairPh")} onChange={(event) => setCode(event.target.value)} />
+      {failed ? <p className="mt-2 text-sm text-coral">{t("settings.pairRemote")}</p> : null}
+      <Button className="mt-4" disabled={code.trim().length < 4} onClick={() => {
+        setFailed(false);
+        void pair(code, origin).catch(() => setFailed(true));
+      }}>{t("pair.go")}</Button>
     </div>
   );
 }

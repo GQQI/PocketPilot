@@ -1,12 +1,15 @@
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { hostname, homedir } from "node:os";
 import path from "node:path";
 import type {
   Bootstrap,
   ChatMessage,
   FileContent,
   FileEntry,
+  FsListing,
   HealthReport,
+  HostView,
   KeySource,
   McpServer,
   Project,
@@ -18,6 +21,7 @@ import type {
   StreamEvent,
   TerminalEvent,
 } from "@mobileagent/protocol";
+import { listDemoDirectory, listHostDirectory } from "./browse";
 import { CATALOG, type CatalogEntry } from "./catalog";
 import { DemoEngine } from "./demo-engine";
 import { HubError } from "./errors";
@@ -63,10 +67,23 @@ interface SavedSettings extends Partial<Omit<Settings, "providers">> {
   providers?: Record<string, Partial<ProviderConfig>>;
 }
 
+interface HostSecrets {
+  code: string;
+  token: string;
+}
+
+export interface HostInfoInput {
+  loopback: boolean;
+  authorized: boolean;
+  port: number;
+  urls: string[];
+}
+
 export class Hub {
   readonly dataDir: string;
   private settings: Settings;
   private secrets: Record<string, string>;
+  private hostSecrets: HostSecrets;
   private healthCache = new Map<string, HealthReport>();
   private readonly demo: DemoEngine;
   private readonly live: LiveEngine;
@@ -78,6 +95,7 @@ export class Hub {
     mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
     this.settings = this.loadSettings();
     this.secrets = this.loadSecrets();
+    this.hostSecrets = this.loadHostSecrets();
     this.demo = new DemoEngine({
       fast: this.fast,
       onChange: () => this.persistDemo(),
@@ -109,6 +127,7 @@ export class Hub {
 
   updateSettings(patch: Partial<Settings> & { providers?: Record<string, Partial<ProviderConfig>> }): Bootstrap {
     if (patch.locale === "en" || patch.locale === "zh") this.settings.locale = patch.locale;
+    if (patch.theme === "light" || patch.theme === "dark") this.settings.theme = patch.theme;
     if (typeof patch.demoMode === "boolean" && patch.demoMode !== this.settings.demoMode) {
       this.settings.demoMode = patch.demoMode;
       this.healthCache.clear();
@@ -266,6 +285,42 @@ export class Hub {
     return this.bootstrap();
   }
 
+  listDirs(dir: string): FsListing {
+    return this.settings.demoMode ? listDemoDirectory(dir) : listHostDirectory(dir);
+  }
+
+  pairingCode(): string {
+    return this.hostSecrets.code;
+  }
+
+  pair(code: string): string {
+    const given = code.trim().toUpperCase().replace(/\s+/g, "");
+    if (!safeEqual(given, this.hostSecrets.code)) throw new HubError("pairing code rejected", 401, "pair");
+    return this.hostSecrets.token;
+  }
+
+  tokenMatches(header: string | undefined): boolean {
+    if (!header) return false;
+    const value = header.startsWith("Bearer ") ? header.slice(7).trim() : header.trim();
+    if (!value) return false;
+    return safeEqual(value, this.hostSecrets.token);
+  }
+
+  hostInfo(input: HostInfoInput): HostView {
+    const paired = input.loopback || input.authorized;
+    return {
+      name: hostname(),
+      platform: process.platform,
+      port: input.port,
+      urls: input.urls,
+      workspacePath: this.settings.workspacePath,
+      demoMode: this.settings.demoMode,
+      paired,
+      loopback: input.loopback,
+      ...(input.loopback ? { pairingCode: this.hostSecrets.code } : {}),
+    };
+  }
+
   private extra(providerId: string): AgentAdapter | undefined {
     return extras.find((adapter) => adapter.meta.id === providerId);
   }
@@ -324,6 +379,7 @@ export class Hub {
       model: config.model,
       endpoint: config.endpoint,
       env,
+      locale: this.settings.locale,
     };
   }
 
@@ -340,6 +396,7 @@ export class Hub {
     const active = saved.activeProviderId;
     return {
       locale: saved.locale === "en" ? "en" : "zh",
+      theme: saved.theme === "dark" ? "dark" : "light",
       demoMode: saved.demoMode !== false,
       activeProviderId: active && providers[active] ? active : "cursor",
       workspacePath: typeof saved.workspacePath === "string" ? saved.workspacePath : "",
@@ -354,6 +411,18 @@ export class Hub {
       if (typeof value === "string" && value) secrets[key] = value;
     }
     return secrets;
+  }
+
+  private loadHostSecrets(): HostSecrets {
+    const saved = readJson<Partial<HostSecrets>>(path.join(this.dataDir, "host.json"), {});
+    if (saved.code && saved.token && /^[A-Z2-9]{6}$/.test(saved.code)) {
+      return { code: saved.code, token: saved.token };
+    }
+    const created = { code: makePairingCode(), token: randomBytes(24).toString("hex") };
+    const file = path.join(this.dataDir, "host.json");
+    writeJson(file, created);
+    chmodSync(file, 0o600);
+    return created;
   }
 
   private persistSettings(): void {
@@ -414,6 +483,22 @@ function standby(id: string): HealthReport {
     detail: "",
     checkedAt: new Date().toISOString(),
   };
+}
+
+const PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function makePairingCode(): string {
+  const bytes = randomBytes(6);
+  let code = "";
+  for (let index = 0; index < 6; index += 1) code += PAIRING_ALPHABET[bytes[index] % PAIRING_ALPHABET.length];
+  return code;
+}
+
+function safeEqual(leftValue: string, rightValue: string): boolean {
+  const left = Buffer.from(leftValue);
+  const right = Buffer.from(rightValue);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }
 
 function readJson<T>(file: string, fallback: T): T {
