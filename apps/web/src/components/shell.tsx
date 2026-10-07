@@ -13,14 +13,14 @@ const links: { to: string; key: CopyKey; icon: typeof LayoutGrid }[] = [
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { data, loading, error, notice, refresh, t } = useApp();
+  const { data, loading, error, notice, refresh, t, locale } = useApp();
   return (
     <div className="relative h-dvh">
       <div className="mx-auto flex h-full w-full max-w-[1240px] flex-col md:flex-row">
         <div className="order-1 flex min-h-0 min-w-0 flex-1 flex-col md:order-2">
           <header className="flex items-center justify-between px-4 pt-4 pb-2 md:px-8">
             <div className="kicker">MobileAgent</div>
-            {data?.settings.demoMode ? <span className="demo-pill">Demo</span> : <span className="live-pill">Live</span>}
+            {data?.settings.demoMode ? <span className="demo-pill">{locale === "zh" ? "演示" : "Demo"}</span> : <span className="live-pill">{locale === "zh" ? "实时" : "Live"}</span>}
           </header>
           <div className="min-h-0 flex-1">
             {error && !data ? (
