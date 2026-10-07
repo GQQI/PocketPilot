@@ -169,6 +169,7 @@ npm run desktop
 截图：
 
 ```bash
+npx playwright install chromium
 npm run screenshots
 ```
 
@@ -258,7 +259,8 @@ The NSIS package is written to `apps\desktop\release`. `npm run desktop:dist` bu
 Screenshots of the main flows (with `npm run dev` already running):
 
 ```bash
+npx playwright install chromium
 npm run screenshots
 ```
 
-Files land in `artifacts/`.
+Files land in `artifacts/`. `npm run dev` must already be running.
