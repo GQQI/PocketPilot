@@ -2,6 +2,8 @@
   "name": "@mobileagent/desktop",
   "version": "0.1.0",
   "private": true,
+  "description": "MobileAgent desktop shell",
+  "author": "MobileAgent",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
@@ -9,7 +11,7 @@
     "dist:win": "electron-builder --win nsis --publish never"
   },
   "devDependencies": {
-    "electron": "^37.6.0",
+    "electron": "37.10.3",
     "electron-builder": "^26.0.12"
   }
 }
