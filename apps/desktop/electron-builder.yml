@@ -1,0 +1,29 @@
+appId: app.mobileagent.desktop
+productName: MobileAgent
+directories:
+  output: release
+files:
+  - main.cjs
+extraResources:
+  - from: ../bridge/dist
+    to: bridge
+  - from: ../web/dist
+    to: web
+win:
+  target:
+    - nsis
+  signAndEditExecutable: false
+  icon: ../web/public/icons/icon-512.png
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: MobileAgent-Setup-${version}.${ext}
+linux:
+  target:
+    - dir
+  icon: ../web/public/icons/icon-512.png
+mac:
+  target:
+    - dir
+  icon: ../web/public/icons/icon-512.png

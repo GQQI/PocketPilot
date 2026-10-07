@@ -1,0 +1,29 @@
+{
+  "name": "mobileagent",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Mobile-first control panel for coding-agent CLIs.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n bridge,web -c cyan,green \"npm run dev -w @mobileagent/bridge\" \"npm run dev -w @mobileagent/web\"",
+    "build": "npm run icons && npm run build -w @mobileagent/web && npm run build -w @mobileagent/bridge",
+    "start": "npm run start -w @mobileagent/bridge",
+    "test": "npm run test -w @mobileagent/agent-core",
+    "typecheck": "npm run typecheck -w @mobileagent/agent-core && npm run typecheck -w @mobileagent/bridge && npm run typecheck -w @mobileagent/web",
+    "desktop": "npm run build && npm run start -w @mobileagent/desktop",
+    "desktop:dist": "npm run build && npm run dist -w @mobileagent/desktop",
+    "desktop:dist:win": "npm run build && npm run dist:win -w @mobileagent/desktop",
+    "icons": "node scripts/make-icons.mjs",
+    "screenshots": "node scripts/capture-screenshots.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "tsx": "^4.20.6"
+  }
+}
