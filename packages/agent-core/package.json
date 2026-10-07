@@ -1,0 +1,21 @@
+{
+  "name": "@mobileagent/agent-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@mobileagent/protocol": "0.1.0"
+  },
+  "scripts": {
+    "test": "tsx --test src/hub.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "tsx": "^4.20.6",
+    "typescript": "~6.0.2"
+  }
+}

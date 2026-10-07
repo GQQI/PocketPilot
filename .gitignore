@@ -1,0 +1,17 @@
+node_modules/
+agent-tools/
+dist/
+dev-dist/
+release/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+.mobileagent/
+apps/desktop/release/
+coverage/
+playwright-report/
+test-results/
+.vite/
