@@ -10,10 +10,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: "bg-lime text-ink hover:brightness-105",
-        ghost: "bg-transparent text-ivory hover:bg-white/5",
-        soft: "bg-white/10 text-ivory border border-white/10",
-        danger: "bg-coral/15 text-coral",
+        primary: "bg-accent text-on",
+        ghost: "bg-transparent text-fg hover:bg-soft",
+        soft: "bg-soft text-fg border border-line",
+        danger: "bg-soft text-coral",
       },
       size: {
         md: "h-11 px-4 text-sm",
@@ -41,7 +41,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cn(
-        "h-11 w-full rounded-2xl border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-mute",
+        "h-11 w-full rounded-2xl border border-line bg-panel px-3 text-sm outline-none placeholder:text-mute",
         props.className,
       )}
     />
@@ -53,7 +53,7 @@ export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
     <textarea
       {...props}
       className={cn(
-        "min-h-12 w-full resize-none rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-sm outline-none placeholder:text-mute",
+        "min-h-12 w-full resize-none rounded-2xl border border-line bg-panel px-3 py-3 text-sm outline-none placeholder:text-mute",
         props.className,
       )}
     />
@@ -66,9 +66,9 @@ export function Toggle({ checked, onCheckedChange, label }: { checked: boolean; 
       checked={checked}
       onCheckedChange={onCheckedChange}
       aria-label={label}
-      className="relative h-7 w-12 rounded-full bg-white/10 data-[state=checked]:bg-lime"
+      className="relative h-7 w-12 rounded-full bg-line data-[state=checked]:bg-accent"
     >
-      <Switch.Thumb className="block h-5 w-5 translate-x-1 rounded-full bg-ivory transition data-[state=checked]:translate-x-6 data-[state=checked]:bg-ink" />
+      <Switch.Thumb className="block h-5 w-5 translate-x-1 rounded-full bg-panel shadow-sm transition data-[state=checked]:translate-x-6" />
     </Switch.Root>
   );
 }
@@ -87,8 +87,8 @@ export function Modal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Dialog.Content className="panel fixed left-1/2 top-1/2 z-50 w-[min(92vw,420px)] -translate-x-1/2 -translate-y-1/2 p-5">
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/30" />
+        <Dialog.Content className="panel fixed left-1/2 top-1/2 z-50 max-h-[min(84dvh,720px)] w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-5">
           <Dialog.Title className="display text-2xl">{title}</Dialog.Title>
           <Dialog.Description className="sr-only">{title}</Dialog.Description>
           <div className="mt-4">{children}</div>

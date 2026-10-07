@@ -1,8 +1,8 @@
 # MobileAgent
 
-手机优先的多代理控制台。用来查看和推动本机上的编码代理：会话、终端输出、项目文件、排队提示，以及每条线路的连接状态。
+手机优先的多代理控制台。手机负责挑选和下指令；Cursor CLI、Claude Code、Codex、OpenCode、Gemini CLI 和 DeepSeek Harness 都跑在你的电脑上。输出再流回手机。
 
-界面是深色、暖色的独立视觉，底部导航给手机用，宽屏会变成左侧导航。它不是 CloudCLI / Claude Code UI 的皮肤，也不包含那份代码。
+界面偏留白，浅色为默认，设置里可以换成深色。底部导航给手机用，宽屏会变成左侧导航。它不是 CloudCLI / Claude Code UI 的皮肤，也不包含那份代码。
 
 VS Code 不是这里的代理平台。编辑器只是你自己的工具；MobileAgent 连接的是代理 CLI。
 
@@ -17,25 +17,29 @@ VS Code 不是这里的代理平台。编辑器只是你自己的工具；Mobile
 | Gemini CLI | `gemini` | CloudCLI 托管文档列出的线路。实时模式跑 `gemini -p -m`。 |
 | DeepSeek Harness | `dsh` | 不是普通的 DeepSeek 对话接口。实时模式跑 `dsh --profile headless`。模型写在 dsh 配置档里（示例：`deepseek-v4-pro`、`deepseek-v4-flash`）。 |
 
-默认是演示模式：六条线路都有样例项目、会话、文件和队列，不需要安装 CLI。关掉演示模式后，桥接会探测命令，并在你填写的项目路径里启动对应 CLI。
+默认是演示模式：六条线路都有样例项目、会话、文件和队列。手机和这台开发机都不需要先装 CLI。关掉演示模式后，电脑上的宿主会探测命令，并在你选中的目录里启动对应 CLI。
 
 新的代理实现 `AgentAdapter`（`packages/agent-core/src/hub.ts`），在创建 Hub 之前调用 `registerAdapter`。内置名单来自 `packages/agent-core/src/catalog.ts`。
 
 ## 架构
 
+手机不安装这些 CLI。电脑上跑一个宿主（`apps/bridge`），界面可以装在手机上，也可以由宿主自己提供。
+
 ```text
-apps/web        Vite + React 界面，手机底部导航，可安装成 PWA
-apps/bridge     本机 HTTP 桥接，只绑 127.0.0.1
-apps/desktop    Electron 壳，启动桥接并打开窗口
+手机浏览器 / PWA
+        │  局域网地址 + 配对码
+        ▼
+apps/bridge     电脑上的宿主。转发指令，把 CLI 输出流回手机
+apps/web        Vite + React 界面
+apps/desktop    Electron 壳，在本机启动宿主并打开窗口
 packages/protocol     共享类型
-packages/agent-core   适配器、演示引擎、实时 CLI 引擎
+packages/agent-core   可插拔适配器、演示引擎、实时 CLI 引擎
 ```
 
 ```mermaid
 flowchart LR
-  UI[apps/web] --> Bridge[apps/bridge]
-  Desktop[apps/desktop] --> Bridge
-  Bridge --> Core[agent-core]
+  Phone[手机] --> Host[电脑上的宿主]
+  Host --> Core[适配器]
   Core --> Demo[演示引擎]
   Core --> Live[实时 CLI]
   Live --> Cursor[agent]
@@ -46,7 +50,37 @@ flowchart LR
   Live --> Dsh[dsh]
 ```
 
-密钥不会进仓库。环境变量优先；否则写到 `~/.mobileagent/secrets.json`（权限 `0600`）。连接设置在 `~/.mobileagent/settings.json`，不含密钥。
+在手机上：选择代理，再用目录选择器挑电脑上的项目目录，然后发送消息。宿主把这段文字交给当前适配器，并把标准输出流式推回会话。六条内置线路走同一条路径。换代理只换适配器，不换手机上的操作。
+
+密钥不会进仓库。环境变量优先；否则写到电脑上的 `~/.mobileagent/secrets.json`（权限 `0600`）。连接设置和浅色/深色偏好在 `~/.mobileagent/settings.json`，不含密钥。配对码在 `~/.mobileagent/host.json`。
+
+## 在 Windows 上让手机连上电脑
+
+把仓库放到 `D:\Project\MobileAgent`，目录就是仓库根目录。
+
+```powershell
+cd D:\Project\MobileAgent
+npm install
+npm run host
+```
+
+`npm run host` 会先构建，再让宿主监听 `0.0.0.0`。终端打印局域网地址和六位配对码。手机和电脑在同一网络时，用手机浏览器打开那个地址，输入配对码。配对码也显示在电脑本机打开的设置页里。本机访问 `127.0.0.1` 不需要填配对码。
+
+之后手机上的流程：
+
+1. 选择代理（Cursor CLI、Claude Code、Codex、OpenCode、Gemini CLI 或 DeepSeek Harness）。
+2. 打开目录选择器，选电脑上的项目目录。演示模式下列出的是 `D:\Project\...` 样例；关掉演示模式后列出真实磁盘。
+3. 在会话里发送文字。宿主在那个目录里启动对应命令，输出实时出现在手机上。
+
+开发时想先看界面：
+
+```powershell
+npm run dev
+```
+
+界面在 `http://127.0.0.1:47231`，同一局域网可以用 `http://<电脑IP>:47231`。开发服务器把接口从这台电脑转发，方便试用。要让其他设备必须填写配对码，用 `npm run host`。
+
+仓库根目录就是应用，之后可以推到自己的 GitHub 仓库（例如 AgentFrame）。按普通推送即可，不要对已有历史做 force-push。
 
 ## 本地运行
 
@@ -58,7 +92,7 @@ npm run dev
 ```
 
 - 界面：<http://127.0.0.1:47231>
-- 桥接：<http://127.0.0.1:47232>
+- 宿主：<http://127.0.0.1:47232>
 
 ```bash
 npm test
@@ -66,13 +100,11 @@ npm run build
 npm start
 ```
 
-`npm start` 由桥接托管已经构建的界面，仍然只监听本机。
-
-把仓库同步到 Windows 时，放到 `D:\Project\MobileAgent` 即可，目录就是仓库根目录，没有额外的包装层。
+`npm start` 由宿主托管已经构建的界面，默认只监听本机。`npm run host` 监听局域网并要求配对。
 
 ## 接上每条线路
 
-先在设置里关掉演示模式，填好「实时模式的项目路径」，再按需要改命令路径。探测不到命令时，卡片会显示离线，并写出找不到的命令名。
+先在设置里关掉演示模式，用目录选择器选好电脑上的项目目录，再按需要改命令路径。探测不到命令时，会话里会写明电脑上缺少哪条命令。手机不需要安装它。
 
 ### Cursor CLI
 
@@ -121,7 +153,7 @@ npm run build
 npm start
 ```
 
-用 Chrome 或 Edge 打开本机地址，选「安装应用」。`apps/web` 在生产构建里带有 Web App Manifest。开发服务器不注册 service worker，避免把旧界面缓存住。
+用手机或电脑上的 Chrome / Edge 打开宿主地址，选「安装应用」。`apps/web` 在生产构建里带有 Web App Manifest。开发服务器不注册 service worker，避免把旧界面缓存住。
 
 ### Windows 安装包
 
@@ -158,13 +190,13 @@ npm run desktop
 
 ## 演示模式里有什么
 
-- 总览：六张代理卡、连接状态、当前会话
-- 会话：流式回复、工具轨迹、终端（`pwd` / `ls` / `git status`）
+- 总览：这台电脑、目录、当前代理，以及更换代理
+- 会话：发到电脑上的指令，以及流回来的输出、工具轨迹、终端
 - 项目：文件树、预览、演示用的改动列表和提交记录
 - 队列：等待、排序、放行，以及会话历史
-- 设置：演示开关、语言、项目路径、命令、模型、端点、密钥、MCP 样例
+- 设置：浅色/深色、手机连接与配对码、演示开关、语言、目录、命令、模型、端点、密钥、MCP 样例
 
-实时模式的终端会在项目目录里执行命令，桥接只监听 `127.0.0.1`。演示模式不会碰真实文件系统。
+实时模式的终端会在所选目录里执行命令。`npm run dev` 和 `npm start` 的宿主默认只监听 `127.0.0.1`。`npm run host` 监听局域网。演示模式的目录列表不会碰真实文件系统。
 
 截图：
 
@@ -173,7 +205,7 @@ npx playwright install chromium
 npm run screenshots
 ```
 
-需要先开着 `npm run dev`。图片写到 `artifacts/`。
+需要先开着 `npm run dev`。图片写到 `artifacts/`：`home_simplified.png`、`agent_picker.png`、`remote_directory.png`、`chat_live_output.png`、`settings_theme.png`。
 
 ## 环境变量
 
@@ -183,9 +215,9 @@ npm run screenshots
 
 # MobileAgent (English)
 
-Mobile-first control panel for coding-agent CLIs. It keeps sessions, terminal output, project files, queued prompts, and connection health on one phone-sized surface.
+Mobile-first control panel for coding-agent CLIs. The phone picks an agent and a folder, then forwards prompts. Cursor CLI, Claude Code, Codex, OpenCode, Gemini CLI, and DeepSeek Harness all run on the PC. Their output streams back to the phone.
 
-The visual language is original: warm ink, lime, and a serif display face, with a bottom dock on phones and a side rail on wider screens. It does not reuse CloudCLI / Claude Code UI code or assets.
+The interface is quiet and light by default. Settings stores a light or dark preference. Phones use a bottom dock; wider screens use a side rail. It does not reuse CloudCLI / Claude Code UI code or assets.
 
 VS Code is not an agent backend here.
 
@@ -200,15 +232,39 @@ VS Code is not an agent backend here.
 | Gemini CLI | `gemini` | Listed by CloudCLI's hosted docs. Live mode runs `gemini -p -m`. |
 | DeepSeek Harness | `dsh` | Not plain DeepSeek chat. Live mode runs `dsh --profile headless`. The model lives in the dsh profile (`deepseek-v4-pro`, `deepseek-v4-flash` in the upstream examples). |
 
-Demo mode is the default. It ships sample projects, sessions, files, and a queue for all six adapters. Turn it off to probe local CLIs and run them in the project path from Settings.
+Demo mode is the default. It ships sample projects, sessions, files, and a queue for all six adapters, so neither the phone nor the dev machine needs the CLIs installed first. Turn it off and the host on the PC probes each command and runs it in the folder you picked.
 
 Add another backend by implementing `AgentAdapter` in `packages/agent-core/src/hub.ts` and calling `registerAdapter` before `createHub`. Built-ins are declared in `packages/agent-core/src/catalog.ts`.
 
-## Layout
+## Architecture
 
-`apps/web` is the Vite UI and PWA. `apps/bridge` is a localhost HTTP bridge. `apps/desktop` is an Electron shell that starts the bridge. Shared types live in `packages/protocol`. Demo and live engines live in `packages/agent-core`.
+The phone does not install the CLIs. A host (`apps/bridge`) runs on the PC. The UI can be installed on the phone, or served by the host.
 
-Keys never go into git. Environment variables win; otherwise they are stored in `~/.mobileagent/secrets.json` with mode `0600`.
+The phone chooses an agent, picks a project directory on that PC, and sends a message. The host hands the text to the current adapter and streams stdout back into the session. All six built-in agents share that path. Switching agents swaps the adapter, not the phone flow.
+
+Keys never go into git. Environment variables win; otherwise they are stored on the PC in `~/.mobileagent/secrets.json` with mode `0600`. Connection settings and the theme live in `~/.mobileagent/settings.json`. The pairing code lives in `~/.mobileagent/host.json`.
+
+## Run the host on Windows so a phone can connect
+
+Put the repo at `D:\Project\MobileAgent`. The repository root is the app root.
+
+```powershell
+cd D:\Project\MobileAgent
+npm install
+npm run host
+```
+
+`npm run host` builds, then listens on `0.0.0.0`. The terminal prints LAN URLs and a six-character pairing code. On the same network, open that URL in the phone browser and enter the code. The code is also shown in Settings when you open the page on the PC itself. `127.0.0.1` does not ask for the code.
+
+On the phone:
+
+1. Choose an agent (Cursor CLI, Claude Code, Codex, OpenCode, Gemini CLI, or DeepSeek Harness).
+2. Open the folder picker and select a project directory on the PC. Demo mode lists sample `D:\Project\...` paths. With demo mode off, the list is the real disk.
+3. Send a message. The host starts that CLI in the folder, and the output appears on the phone as it is produced.
+
+For local UI work, `npm run dev` serves the interface at <http://127.0.0.1:47231> (or `http://<pc-ip>:47231` on the LAN). The dev server proxies API calls on the PC. Use `npm run host` when other devices must pair.
+
+The repo root is the app. It can be pushed to a GitHub repository such as AgentFrame later with a normal push. Do not force-push over existing history.
 
 ## Run
 
@@ -219,7 +275,9 @@ npm install
 npm run dev
 ```
 
-UI: <http://127.0.0.1:47231> · bridge: <http://127.0.0.1:47232>
+UI: <http://127.0.0.1:47231> · host: <http://127.0.0.1:47232>
+
+`npm start` serves the built UI on this PC only. `npm run host` listens on the LAN and requires pairing.
 
 ```bash
 npm test
@@ -227,11 +285,9 @@ npm run build
 npm start
 ```
 
-Copy the repo to `D:\Project\MobileAgent` on Windows. The repository root is the app root.
-
 ## Pointing at each backend
 
-Turn demo mode off, set the live project path, and adjust the command if it is not on `PATH`. A missing binary shows as offline with the command name.
+Turn demo mode off, pick a folder on the computer, and adjust the command if it is not on `PATH`. A missing binary is written into the session as output from the PC. The phone does not install it.
 
 - **Cursor CLI** — <https://cursor.com/docs/cli/overview>. `agent -p`. `--model` is added only when the model is not `auto`.
 - **Claude Code** — <https://docs.anthropic.com/en/docs/claude-code>. `claude -p --model`. Optional `ANTHROPIC_API_KEY`.
@@ -244,7 +300,7 @@ On Windows, if the CLI is a `.cmd` shim, paste the full path into the command fi
 
 ## Install
 
-PWA: `npm run build && npm start`, then use the browser's install action. The manifest is emitted by the production build.
+PWA: `npm run build && npm start`, then use the browser's install action on the phone or the PC. The manifest is emitted by the production build.
 
 Windows installer, from `D:\Project\MobileAgent`:
 
@@ -263,4 +319,4 @@ npx playwright install chromium
 npm run screenshots
 ```
 
-Files land in `artifacts/`. `npm run dev` must already be running.
+Files land in `artifacts/` (`home_simplified.png`, `agent_picker.png`, `remote_directory.png`, `chat_live_output.png`, `settings_theme.png`). `npm run dev` must already be running.

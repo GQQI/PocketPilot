@@ -55,7 +55,7 @@ async function createWindow() {
     minWidth: 360,
     minHeight: 640,
     title: "MobileAgent",
-    backgroundColor: "#12110f",
+    backgroundColor: "#f3f0ea",
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,

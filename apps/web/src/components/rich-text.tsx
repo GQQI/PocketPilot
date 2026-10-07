@@ -41,7 +41,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
         <span>{language || "code"}</span>
         <button
           type="button"
-          className="text-lime"
+          className="text-accent"
           onClick={() => {
             void navigator.clipboard.writeText(code).then(() => setNotice(t("common.copied")));
           }}

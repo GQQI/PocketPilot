@@ -102,7 +102,8 @@ export function ChatPage() {
           <Mark monogram={provider.meta.monogram} accent={provider.meta.accent} />
           <div className="min-w-0">
             <h1 className="truncate text-lg font-medium">{session.title}</h1>
-            <p className="truncate text-xs text-mute">{provider.meta.name} · {project?.name}</p>
+            <p className="truncate text-xs text-mute">{provider.meta.name} · {t("chat.fromPc")}</p>
+            <p className="truncate text-xs text-mute">{data.settings.workspacePath || project?.path}</p>
           </div>
         </div>
         <Button size="sm" variant="soft" onClick={() => setCreating(true)}>{t("chat.new")}</Button>
@@ -112,18 +113,18 @@ export function ChatPage() {
           <button
             key={item.id}
             type="button"
-            className={item.id === session.id ? "shrink-0 rounded-full bg-lime px-3 py-1 text-xs text-ink" : "shrink-0 rounded-full bg-white/5 px-3 py-1 text-xs text-mute"}
+            className={item.id === session.id ? "shrink-0 rounded-full bg-accent px-3 py-1 text-xs text-on" : "shrink-0 rounded-full bg-soft px-3 py-1 text-xs text-mute"}
             onClick={() => navigate(`/chat/${item.id}`)}
           >
             {item.title}
           </button>
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-2 rounded-full bg-black/20 p-1 text-sm">
-        <button type="button" className={pane === "chat" ? "rounded-full bg-ivory text-ink" : "text-mute"} onClick={() => setPane("chat")}>{t("chat.talk")}</button>
-        <button type="button" className={pane === "terminal" ? "rounded-full bg-ivory text-ink" : "text-mute"} onClick={() => setPane("terminal")}>{t("chat.term")}</button>
+      <div className="mt-3 grid grid-cols-2 rounded-full bg-soft p-1 text-sm">
+        <button type="button" className={pane === "chat" ? "rounded-full bg-accent text-on" : "text-mute"} onClick={() => setPane("chat")}>{t("chat.talk")}</button>
+        <button type="button" className={pane === "terminal" ? "rounded-full bg-accent text-on" : "text-mute"} onClick={() => setPane("terminal")}>{t("chat.term")}</button>
       </div>
-      <div ref={scroller} className="app-scroll mt-3 min-h-0 flex-1 overflow-y-auto pb-3">
+      <div ref={scroller} data-testid="agent-output" className="app-scroll mt-3 min-h-0 flex-1 overflow-y-auto pb-3">
         {pane === "chat" ? (
           <div className="space-y-4">
             {messages.length === 0 ? <p className="text-sm text-mute">{t("chat.empty")}</p> : null}
@@ -132,10 +133,10 @@ export function ChatPage() {
           </div>
         ) : (
           <div>
-            <p className="mb-2 text-xs text-mute">{data.settings.demoMode ? t("term.note") : project?.path}</p>
+            <p className="mb-2 text-xs text-mute">{data.settings.demoMode ? t("term.note") : (data.settings.workspacePath || project?.path)}</p>
             <div className="terminal">{lines.join("\n") || `${provider.meta.cli}\n`}</div>
             <form className="mt-3 flex gap-2" onSubmit={(event) => { event.preventDefault(); void runCommand(); }}>
-              <input value={command} onChange={(event) => setCommand(event.target.value)} placeholder={t("term.ph")} className="h-11 flex-1 rounded-2xl border border-white/10 bg-black/20 px-3 text-sm" />
+              <input value={command} onChange={(event) => setCommand(event.target.value)} placeholder={t("term.ph")} className="field h-11 flex-1" />
               <Button type="submit" size="sm">{t("term.run")}</Button>
             </form>
           </div>
@@ -145,7 +146,7 @@ export function ChatPage() {
         <form className="pb-3" onSubmit={(event) => { event.preventDefault(); void send(draft); }}>
           <div className="mb-2 flex gap-2 overflow-x-auto">
             {ideas(provider.meta.id).map((idea) => (
-              <button key={idea} type="button" className="shrink-0 rounded-full border border-white/10 px-3 py-1 text-xs text-mute" onClick={() => setDraft(idea)}>
+              <button key={idea} type="button" className="shrink-0 rounded-full border border-line bg-panel px-3 py-1 text-xs text-mute" onClick={() => setDraft(idea)}>
                 {idea}
               </button>
             ))}
@@ -192,7 +193,7 @@ function NewSession({ open, onOpenChange, providerId }: { open: boolean; onOpenC
           });
         }}>
           <label className="text-xs text-mute">{t("chat.pick")}</label>
-          <select className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-black/20 px-3" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+          <select className="field mt-2" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
           <div className="mt-4 flex justify-end gap-2">
@@ -211,18 +212,18 @@ function MessageView({ message, name }: { message: ChatMessage; name: string }) 
     const text = message.blocks.find((block) => block.type === "text");
     return (
       <div className="user-bubble">
-        <div className="mb-1 text-[11px] text-coral">{t("chat.you")}</div>
+        <div className="mb-1 text-[11px] text-mute">{t("chat.you")}</div>
         <p className="whitespace-pre-wrap text-sm">{text && text.type === "text" ? text.text : ""}</p>
       </div>
     );
   }
   return (
     <article>
-      <div className="mb-2 text-xs text-mute">{name}</div>
+      <div className="mb-2 text-xs text-mute">{t("chat.received")} · {name}</div>
       <div className="space-y-2">
         {message.blocks.map((block, index) => {
           if (block.type === "thinking") return <p key={index} className="text-xs text-mute">{t("chat.thinking")} · {block.text}</p>;
-          if (block.type === "tool") return <div key={index} className="tool-row"><span className="text-lime">{block.name}</span><span className="truncate text-mute">{block.detail}</span></div>;
+          if (block.type === "tool") return <div key={index} className="tool-row"><span className="text-accent">{block.name}</span><span className="truncate text-mute">{block.detail}</span></div>;
           return <RichText key={index} text={block.text} />;
         })}
       </div>
@@ -240,6 +241,7 @@ function applyEvent(current: Live | null, event: StreamEvent): Live {
   const next = current ?? { thinking: "", text: "", tools: [] };
   if (event.type === "thinking") return { ...next, thinking: next.thinking + event.delta };
   if (event.type === "text") return { ...next, text: next.text + event.delta };
+  if (event.type === "error") return { ...next, text: next.text ? `${next.text}\n${event.message}` : event.message };
   if (event.type === "tool" && event.phase === "done") return { ...next, tools: [...next.tools, { name: event.name, detail: event.detail }] };
   return next;
 }
@@ -247,11 +249,11 @@ function applyEvent(current: Live | null, event: StreamEvent): Live {
 function LiveView({ live, name }: { live: Live; name: string }) {
   const { t } = useApp();
   return (
-    <article>
-      <div className="mb-2 text-xs text-lime">{name}</div>
+    <article data-testid="live-output">
+      <div className="mb-2 text-xs text-accent">{t("chat.receiving")} · {name}</div>
       {live.thinking ? <p className="text-xs text-mute">{t("chat.thinking")} · {live.thinking}</p> : null}
       <div className="mt-2 space-y-2">
-        {live.tools.map((tool, index) => <div key={index} className="tool-row"><span className="text-lime">{tool.name}</span><span className="text-mute">{tool.detail}</span></div>)}
+        {live.tools.map((tool, index) => <div key={index} className="tool-row"><span className="text-accent">{tool.name}</span><span className="text-mute">{tool.detail}</span></div>)}
       </div>
       {live.text ? <div className="mt-2"><RichText text={live.text} /></div> : null}
     </article>
