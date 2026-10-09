@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { hostname, homedir } from "node:os";
 import path from "node:path";
@@ -8,6 +8,7 @@ import type {
   FileContent,
   FileEntry,
   FsListing,
+  DeviceView,
   HealthReport,
   HostView,
   KeySource,
@@ -47,6 +48,11 @@ export interface AgentAdapter {
 export interface HubOptions {
   dataDir?: string;
   fast?: boolean;
+  /** Remote mode: no loopback trust, pairing code never exposed over HTTP, code rotates after each pairing. Defaults to MOBILEAGENT_REMOTE=1. */
+  remote?: boolean;
+  /** Device token lifetime in days. Defaults to MOBILEAGENT_TOKEN_TTL_DAYS or 90. */
+  tokenTtlDays?: number;
+  onPairingCodeChange?: (code: string) => void;
 }
 
 const extras: AgentAdapter[] = [];
@@ -67,9 +73,37 @@ interface SavedSettings extends Partial<Omit<Settings, "providers">> {
   providers?: Record<string, Partial<ProviderConfig>>;
 }
 
+export interface DeviceRecord {
+  id: string;
+  name: string;
+  tokenHash: string;
+  createdAt: number;
+  lastSeen: number;
+  expiresAt: number;
+}
+
 interface HostSecrets {
   code: string;
-  token: string;
+  devices: DeviceRecord[];
+}
+
+export interface PairContext {
+  /** Client key for rate limiting (usually the remote IP). */
+  ip?: string;
+  /** Human readable device name supplied by the phone. */
+  name?: string;
+}
+
+const MAX_FAILS_PER_IP = 5;
+const MAX_FAILS_GLOBAL = 20;
+const LOCK_MS = 15 * 60 * 1000;
+const FAIL_WINDOW_MS = 15 * 60 * 1000;
+const DEFAULT_TOKEN_TTL_DAYS = 90;
+
+interface FailState {
+  count: number;
+  first: number;
+  lockedUntil: number;
 }
 
 export interface HostInfoInput {
@@ -88,10 +122,19 @@ export class Hub {
   private readonly demo: DemoEngine;
   private readonly live: LiveEngine;
   private readonly fast: boolean;
+  readonly remote: boolean;
+  private readonly tokenTtlMs: number;
+  private readonly onCode?: (code: string) => void;
+  private fails = new Map<string, FailState>();
+  private lastSeenSaved = 0;
 
   constructor(options: HubOptions = {}) {
     this.dataDir = options.dataDir ?? process.env.MOBILEAGENT_HOME ?? path.join(homedir(), ".mobileagent");
     this.fast = options.fast ?? false;
+    this.remote = options.remote ?? process.env.MOBILEAGENT_REMOTE === "1";
+    const ttlDays = options.tokenTtlDays ?? Number(process.env.MOBILEAGENT_TOKEN_TTL_DAYS ?? DEFAULT_TOKEN_TTL_DAYS);
+    this.tokenTtlMs = (Number.isFinite(ttlDays) && ttlDays > 0 ? ttlDays : DEFAULT_TOKEN_TTL_DAYS) * 86_400_000;
+    this.onCode = options.onPairingCodeChange;
     mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
     this.settings = this.loadSettings();
     this.secrets = this.loadSecrets();
@@ -293,21 +336,81 @@ export class Hub {
     return this.hostSecrets.code;
   }
 
-  pair(code: string): string {
+  /** Exchange the pairing code for a per-device token. Rate limited and lockable. */
+  pair(code: string, context: PairContext = {}): { token: string; device: DeviceView } {
+    const now = Date.now();
+    const key = context.ip || "local";
+    this.assertNotLocked(key, now);
+    this.assertNotLocked("*", now);
     const given = code.trim().toUpperCase().replace(/\s+/g, "");
-    if (!safeEqual(given, this.hostSecrets.code)) throw new HubError("pairing code rejected", 401, "pair");
-    return this.hostSecrets.token;
+    if (!safeEqual(given, this.hostSecrets.code)) {
+      this.recordFail(key, MAX_FAILS_PER_IP, now);
+      this.recordFail("*", MAX_FAILS_GLOBAL, now);
+      throw new HubError("pairing code rejected", 401, "pair");
+    }
+    this.fails.delete(key);
+    const token = "mat_" + randomBytes(32).toString("hex");
+    const device: DeviceRecord = {
+      id: "dev_" + randomBytes(6).toString("hex"),
+      name: (context.name ?? "").toString().trim().slice(0, 60) || "Phone",
+      tokenHash: hashToken(token),
+      createdAt: now,
+      lastSeen: now,
+      expiresAt: now + this.tokenTtlMs,
+    };
+    this.hostSecrets.devices.push(device);
+    if (this.remote) this.rotatePairingCode();
+    this.saveHostSecrets();
+    return { token, device: this.deviceView(device, device.id) };
+  }
+
+  /** Regenerate the pairing code (remote mode does this after every pairing and every lockout). */
+  rotatePairingCode(): string {
+    this.hostSecrets.code = makePairingCode();
+    this.saveHostSecrets();
+    this.onCode?.(this.hostSecrets.code);
+    return this.hostSecrets.code;
+  }
+
+  authenticate(header: string | undefined): DeviceRecord | null {
+    if (!header) return null;
+    const value = header.startsWith("Bearer ") ? header.slice(7).trim() : header.trim();
+    if (!value) return null;
+    const hash = hashToken(value);
+    const now = Date.now();
+    let found: DeviceRecord | null = null;
+    for (const device of this.hostSecrets.devices) {
+      if (safeEqual(hash, device.tokenHash)) found = device;
+    }
+    if (!found || found.expiresAt <= now) return null;
+    found.lastSeen = now;
+    if (now - this.lastSeenSaved > 60_000) {
+      this.lastSeenSaved = now;
+      this.saveHostSecrets();
+    }
+    return found;
   }
 
   tokenMatches(header: string | undefined): boolean {
-    if (!header) return false;
-    const value = header.startsWith("Bearer ") ? header.slice(7).trim() : header.trim();
-    if (!value) return false;
-    return safeEqual(value, this.hostSecrets.token);
+    return this.authenticate(header) !== null;
+  }
+
+  listDevices(currentId?: string): DeviceView[] {
+    const now = Date.now();
+    return this.hostSecrets.devices.filter((device) => device.expiresAt > now).map((device) => this.deviceView(device, currentId));
+  }
+
+  revokeDevice(id: string): DeviceView[] {
+    const before = this.hostSecrets.devices.length;
+    this.hostSecrets.devices = this.hostSecrets.devices.filter((device) => device.id !== id);
+    if (this.hostSecrets.devices.length === before) throw new HubError("unknown device", 404, "device");
+    this.saveHostSecrets();
+    return this.listDevices();
   }
 
   hostInfo(input: HostInfoInput): HostView {
-    const paired = input.loopback || input.authorized;
+    const loopback = input.loopback && !this.remote;
+    const paired = loopback || input.authorized;
     return {
       name: hostname(),
       platform: process.platform,
@@ -316,9 +419,48 @@ export class Hub {
       workspacePath: this.settings.workspacePath,
       demoMode: this.settings.demoMode,
       paired,
-      loopback: input.loopback,
-      ...(input.loopback ? { pairingCode: this.hostSecrets.code } : {}),
+      loopback,
+      remote: this.remote,
+      ...(loopback ? { pairingCode: this.hostSecrets.code } : {}),
     };
+  }
+
+  private deviceView(device: DeviceRecord, currentId?: string): DeviceView {
+    return {
+      id: device.id,
+      name: device.name,
+      createdAt: device.createdAt,
+      lastSeen: device.lastSeen,
+      expiresAt: device.expiresAt,
+      current: device.id === currentId,
+    };
+  }
+
+  private assertNotLocked(key: string, now: number): void {
+    const state = this.fails.get(key);
+    if (state && state.lockedUntil > now) {
+      const seconds = Math.ceil((state.lockedUntil - now) / 1000);
+      throw new HubError(`too many attempts, retry in ${seconds}s`, 429, "locked");
+    }
+  }
+
+  private recordFail(key: string, limit: number, now: number): void {
+    let state = this.fails.get(key);
+    if (!state || now - state.first > FAIL_WINDOW_MS) state = { count: 0, first: now, lockedUntil: 0 };
+    state.count += 1;
+    if (state.count >= limit) {
+      state.lockedUntil = now + LOCK_MS;
+      state.count = 0;
+      state.first = now;
+      if (this.remote) this.rotatePairingCode();
+    }
+    this.fails.set(key, state);
+  }
+
+  private saveHostSecrets(): void {
+    const file = path.join(this.dataDir, "host.json");
+    writeJson(file, this.hostSecrets);
+    try { chmodSync(file, 0o600); } catch { /* windows */ }
   }
 
   private extra(providerId: string): AgentAdapter | undefined {
@@ -414,14 +556,20 @@ export class Hub {
   }
 
   private loadHostSecrets(): HostSecrets {
-    const saved = readJson<Partial<HostSecrets>>(path.join(this.dataDir, "host.json"), {});
-    if (saved.code && saved.token && /^[A-Z2-9]{6}$/.test(saved.code)) {
-      return { code: saved.code, token: saved.token };
-    }
-    const created = { code: makePairingCode(), token: randomBytes(24).toString("hex") };
     const file = path.join(this.dataDir, "host.json");
+    const saved = readJson<Partial<HostSecrets> & { token?: string }>(file, {});
+    if (saved.code && /^[A-Z2-9]{6}$/.test(saved.code)) {
+      // A legacy single shared "token" is intentionally dropped; phones must pair again to get a per-device token.
+      const devices = Array.isArray(saved.devices) ? saved.devices.filter((d) => d && typeof d.tokenHash === "string") : [];
+      const secrets = { code: saved.code, devices };
+      if (saved.token !== undefined) {
+        writeJson(file, secrets);
+      }
+      return secrets;
+    }
+    const created: HostSecrets = { code: makePairingCode(), devices: [] };
     writeJson(file, created);
-    chmodSync(file, 0o600);
+    try { chmodSync(file, 0o600); } catch { /* windows */ }
     return created;
   }
 
@@ -492,6 +640,10 @@ function makePairingCode(): string {
   let code = "";
   for (let index = 0; index < 6; index += 1) code += PAIRING_ALPHABET[bytes[index] % PAIRING_ALPHABET.length];
   return code;
+}
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 function safeEqual(leftValue: string, rightValue: string): boolean {

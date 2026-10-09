@@ -9,7 +9,9 @@ import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import type { Context } from "hono";
 
-const hub = createHub();
+const hub = createHub({
+  onPairingCodeChange: (code) => console.log(`  pairing code rotated: ${code}`),
+});
 const app = new Hono();
 const staticDir = process.env.MOBILEAGENT_STATIC;
 const port = Number(process.env.MOBILEAGENT_PORT ?? 47232);
@@ -21,14 +23,22 @@ app.onError((error, c) => {
   return c.json({ error: "internal error" }, 500);
 });
 
+const extraOrigins = (process.env.MOBILEAGENT_ORIGINS ?? "").split(",").map((item) => item.trim().replace(/\/$/, "")).filter(Boolean);
+const SSE_HEARTBEAT_MS = Number(process.env.MOBILEAGENT_SSE_HEARTBEAT_MS ?? 15000);
+
 app.use("*", cors({
-  origin: (origin) => origin || "*",
+  // Never echo arbitrary origins: only explicit MOBILEAGENT_ORIGINS, plus (outside remote mode) loopback / LAN pages.
+  origin: (origin) => (originAllowed(origin) ? origin : ""),
   allowHeaders: ["authorization", "content-type"],
   allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
 }));
 
 app.use("/api/*", async (c, next) => {
   if (c.req.method === "OPTIONS") return next();
+  const origin = c.req.header("origin");
+  if (origin && !originAllowed(origin) && !sameOrigin(c, origin)) {
+    return c.json({ error: "origin not allowed", code: "origin" }, 403);
+  }
   const loopback = isLoopback(c);
   const pathname = new URL(c.req.url).pathname;
   const open = pathname === "/api/health" || pathname === "/api/host" || pathname === "/api/pair";
@@ -48,9 +58,10 @@ app.get("/api/host", (c) => c.json(hub.hostInfo({
 })));
 app.post("/api/pair", async (c) => {
   const body = await c.req.json().catch(() => ({ code: "" }));
-  const token = hub.pair(String(body.code ?? ""));
+  const { token, device } = hub.pair(String(body.code ?? ""), { ip: clientIp(c), name: body.name ? String(body.name) : undefined });
   return c.json({
     token,
+    device,
     host: hub.hostInfo({
       loopback: isLoopback(c),
       authorized: true,
@@ -59,6 +70,8 @@ app.post("/api/pair", async (c) => {
     }),
   });
 });
+app.get("/api/devices", (c) => c.json(hub.listDevices(hub.authenticate(c.req.header("authorization"))?.id)));
+app.delete("/api/devices/:id", (c) => c.json(hub.revokeDevice(c.req.param("id"))));
 app.get("/api/fs", (c) => c.json(hub.listDirs(c.req.query("path") ?? "")));
 
 app.post("/api/settings", async (c) => c.json(hub.updateSettings(await c.req.json())));
@@ -123,6 +136,7 @@ serve({ fetch: app.fetch, port, hostname }, () => {
   console.log("MobileAgent host is running on this PC");
   for (const url of phoneUrls(port, Boolean(staticDir))) console.log(`  ${url}`);
   console.log(`  pairing code ${hub.pairingCode()}`);
+  if (hub.remote) console.log("  remote mode: loopback is NOT trusted, every client must pair");
 });
 
 async function sseFrom(c: Context, source: AsyncIterable<unknown>) {
@@ -135,16 +149,71 @@ async function sseFrom(c: Context, source: AsyncIterable<unknown>) {
     throw error;
   }
   return streamSSE(c, async (stream) => {
-    if (!first.done) await stream.writeSSE({ data: JSON.stringify(first.value) });
-    while (true) {
-      const next = await iterator.next();
-      if (next.done) break;
-      await stream.writeSSE({ data: JSON.stringify(next.value) });
+    // Comment-line heartbeat keeps proxies/NATs from closing idle streams; clients ignore it.
+    const beat = setInterval(() => { void stream.write(": ping\n\n").catch(() => undefined); }, SSE_HEARTBEAT_MS);
+    try {
+      if (!first.done) await stream.writeSSE({ data: JSON.stringify(first.value) });
+      while (true) {
+        const next = await iterator.next();
+        if (next.done) break;
+        await stream.writeSSE({ data: JSON.stringify(next.value) });
+      }
+    } finally {
+      clearInterval(beat);
     }
   });
 }
 
+const PROXY_HEADERS = ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-port", "x-real-ip", "forwarded", "via", "cf-connecting-ip", "true-client-ip", "x-original-forwarded-for"];
+
+function isLoopbackHostname(name: string): boolean {
+  const host = name.replace(/^\[|\]$/g, "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function hostHeaderName(c: Context): string {
+  const host = c.req.header("host") ?? "";
+  return host.startsWith("[") ? host.slice(0, host.indexOf("]") + 1) : host.split(":")[0];
+}
+
+function clientIp(c: Context): string {
+  try {
+    return getConnInfo(c).remote.address ?? "unknown";
+  } catch {
+    return "tunnel";
+  }
+}
+
+function originAllowed(origin: string | undefined): boolean {
+  if (!origin) return false;
+  if (extraOrigins.includes(origin.replace(/\/$/, ""))) return true;
+  if (hub.remote) return false;
+  try {
+    const host = new URL(origin).hostname.replace(/^\[|\]$/g, "");
+    if (isLoopbackHostname(host) || host.endsWith(".local")) return true;
+    const m = /^(\d+)\.(\d+)\.\d+\.\d+$/.exec(host);
+    if (!m) return false;
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    return a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31);
+  } catch {
+    return false;
+  }
+}
+
+function sameOrigin(c: Context, origin: string): boolean {
+  try {
+    return new URL(origin).host === c.req.header("host");
+  } catch {
+    return false;
+  }
+}
+
 function isLoopback(c: Context): boolean {
+  // Remote mode, any proxy/tunnel header, or a non-loopback Host (DNS rebinding) means we cannot trust the socket address.
+  if (hub.remote) return false;
+  if (PROXY_HEADERS.some((name) => c.req.header(name) !== undefined)) return false;
+  if (!isLoopbackHostname(hostHeaderName(c))) return false;
   try {
     const address = getConnInfo(c).remote.address ?? "";
     return address === "127.0.0.1" || address === "::1" || address.endsWith("127.0.0.1");
