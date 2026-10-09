@@ -5,32 +5,32 @@
 
 :root {
   color-scheme: light;
-  --ma-bg: #f3f0ea;
-  --ma-fg: #1f1c19;
-  --ma-mute: #6f6860;
-  --ma-accent: #2c5c4a;
-  --ma-on: #f7f6f2;
-  --ma-danger: #8d3d36;
-  --ma-line: #e3ddd4;
-  --ma-soft: #e8e2d8;
-  --ma-panel: #fffcf8;
-  --ma-code: #f7f4ef;
-  --ma-shadow: 0 10px 30px rgba(48, 40, 32, 0.06);
+  --ma-bg: #eef3f8;
+  --ma-fg: #121c2b;
+  --ma-mute: #6a7b8d;
+  --ma-accent: #2f6fed;
+  --ma-on: #ffffff;
+  --ma-danger: #c44b4b;
+  --ma-line: #dae2eb;
+  --ma-soft: #e2ebf4;
+  --ma-panel: #ffffff;
+  --ma-code: #f5f8fb;
+  --ma-shadow: 0 10px 36px rgba(18, 28, 43, 0.07);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --ma-bg: #161513;
-  --ma-fg: #f3efe8;
-  --ma-mute: #a39c93;
-  --ma-accent: #d5e2c8;
-  --ma-on: #1c2118;
-  --ma-danger: #e7b1a8;
-  --ma-line: #2e2b27;
-  --ma-soft: #242220;
-  --ma-panel: #1e1c19;
-  --ma-code: #12110f;
-  --ma-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  --ma-bg: #0b1016;
+  --ma-fg: #f7f9fc;
+  --ma-mute: #c5d0dc;
+  --ma-accent: #7eafff;
+  --ma-on: #0b1016;
+  --ma-danger: #ff8a90;
+  --ma-line: #2c3643;
+  --ma-soft: #243040;
+  --ma-panel: #1a222d;
+  --ma-code: #0e141c;
+  --ma-shadow: 0 12px 40px rgba(0, 0, 0, 0.42);
 }
 
 @theme inline {
@@ -127,7 +127,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   place-items: center;
   font-size: 12px;
   font-weight: 600;
-  color: #f6f4ef;
+  color: #ffffff;
   flex: none;
 }
 
