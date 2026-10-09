@@ -1,4 +1,4 @@
-import type { Bootstrap, ChatMessage, FileContent, FileEntry, FsListing, HostView, PairResult, SessionCreated, StreamEvent, TerminalEvent } from "@mobileagent/protocol";
+import type { Bootstrap, ChatMessage, DeviceView, FileContent, FileEntry, FsListing, HostView, PairResult, SessionCreated, StreamEvent, TerminalEvent } from "@mobileagent/protocol";
 
 const BRIDGE_KEY = "mobileagent.bridge";
 const TOKEN_KEY = "mobileagent.token";
@@ -58,12 +58,14 @@ async function toError(response: Response): Promise<ApiError> {
 export const api = {
   bootstrap: () => request<Bootstrap>("/api/bootstrap"),
   host: () => request<HostView>("/api/host"),
+  devices: () => request<DeviceView[]>("/api/devices"),
+  revokeDevice: (id: string) => request<DeviceView[]>(`/api/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
   listFs: (dir: string) => request<FsListing>(`/api/fs?path=${encodeURIComponent(dir)}`),
   pair: async (code: string, origin?: string) => {
     const previous = readStore(BRIDGE_KEY);
     if (origin !== undefined) writeStore(BRIDGE_KEY, origin.trim().replace(/\/$/, ""));
     try {
-      const result = await request<PairResult>("/api/pair", json({ code }));
+      const result = await request<PairResult>("/api/pair", json({ code, name: deviceName() }));
       writeStore(TOKEN_KEY, result.token);
       return result;
     } catch (error) {
@@ -98,6 +100,12 @@ export const api = {
   runQueue: (id: string, onEvent: (event: StreamEvent) => void, signal: AbortSignal) =>
     stream(`/api/queue/${id}/run`, {}, onEvent, signal),
 };
+
+function deviceName(): string {
+  const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  const kind = /iPhone|iPad/.test(ua) ? "iPhone" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "Mac" : "Browser";
+  return `${kind} ${new Date().toLocaleDateString()}`;
+}
 
 function json(body: unknown): RequestInit {
   return { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) };

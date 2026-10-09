@@ -1,5 +1,6 @@
 import type { HostView, ProviderConfig, ProviderView } from "@mobileagent/protocol";
 import { useEffect, useState } from "react";
+import { DevicesPanel } from "@/components/devices-panel";
 import { DirectoryPicker } from "@/components/directory-picker";
 import { Button, Input, Toggle } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -66,6 +67,7 @@ export function SettingsPage() {
           <Button size="sm" variant="ghost" onClick={() => { api.forgetHost(); setNotice(t("settings.saved")); }}>{t("settings.forget")}</Button>
         </div>
       </section>
+      <DevicesPanel />
       <section className="panel mt-4 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>

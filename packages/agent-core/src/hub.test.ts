@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHub } from "./hub";
 import { resolveInside } from "./paths";
 
@@ -29,7 +29,7 @@ test("demo hub covers CloudCLI agents plus DeepSeek Harness", async () => {
 
     const code = hub.pairingCode();
     assert.throws(() => hub.pair("000000"), /rejected/);
-    const token = hub.pair(code.toLowerCase());
+    const { token } = hub.pair(code.toLowerCase());
     assert.equal(hub.tokenMatches(`Bearer ${token}`), true);
     assert.equal(hub.tokenMatches("Bearer nope"), false);
     assert.equal(hub.hostInfo({ loopback: false, authorized: true, port: 9, urls: [] }).pairingCode, undefined);
@@ -89,6 +89,78 @@ test("demo hub covers CloudCLI agents plus DeepSeek Harness", async () => {
     assert.equal(reordered.queue.find((item) => item.status === "waiting")?.id, waiting.at(-1));
 
     assert.throws(() => resolveInside(dir, "../outside"), /escapes/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+function tmpHub(options: Parameters<typeof createHub>[0] = {}) {
+  return mkdtemp(path.join(tmpdir(), "mobileagent-sec-")).then((dir) => ({ dir, hub: createHub({ dataDir: dir, fast: true, ...options }) }));
+}
+
+test("pairing issues per-device tokens that can be revoked", async () => {
+  const { dir, hub } = await tmpHub({ remote: false });
+  try {
+    const a = hub.pair(hub.pairingCode(), { name: "iPhone", ip: "1.1.1.1" });
+    const b = hub.pair(hub.pairingCode(), { name: "Pixel", ip: "1.1.1.2" });
+    assert.notEqual(a.token, b.token);
+    assert.equal(hub.tokenMatches(`Bearer ${a.token}`), true);
+    assert.equal(hub.listDevices(a.device.id).length, 2);
+    assert.equal(hub.listDevices(a.device.id).find((d) => d.id === a.device.id)?.current, true);
+    // tokens are stored hashed
+    const raw = await readFile(path.join(dir, "host.json"), "utf8");
+    assert.equal(raw.includes(a.token), false);
+    hub.revokeDevice(a.device.id);
+    assert.equal(hub.tokenMatches(`Bearer ${a.token}`), false);
+    assert.equal(hub.tokenMatches(`Bearer ${b.token}`), true);
+    assert.throws(() => hub.revokeDevice("dev_missing"), /unknown device/);
+    // survives restart
+    const again = createHub({ dataDir: dir, fast: true, remote: false });
+    assert.equal(again.tokenMatches(`Bearer ${b.token}`), true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("device tokens expire", async () => {
+  const { dir, hub } = await tmpHub({ remote: false, tokenTtlDays: 0.00000001 });
+  try {
+    const { token } = hub.pair(hub.pairingCode());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(hub.tokenMatches(`Bearer ${token}`), false);
+    assert.equal(hub.listDevices().length, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("pairing is rate limited and locks out", async () => {
+  const { dir, hub } = await tmpHub({ remote: false });
+  try {
+    for (let i = 0; i < 5; i += 1) assert.throws(() => hub.pair("AAAAAA", { ip: "9.9.9.9" }), /rejected/);
+    // even the correct code is refused while locked
+    assert.throws(() => hub.pair(hub.pairingCode(), { ip: "9.9.9.9" }), (e: { status?: number; code?: string }) => e.status === 429 && e.code === "locked");
+    // another client is unaffected
+    assert.ok(hub.pair(hub.pairingCode(), { ip: "8.8.8.8" }).token);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("remote mode never exposes the code, ignores loopback and rotates the code", async () => {
+  const rotated: string[] = [];
+  const { dir, hub } = await tmpHub({ remote: true, onPairingCodeChange: (c) => rotated.push(c) });
+  try {
+    const first = hub.pairingCode();
+    const info = hub.hostInfo({ loopback: true, authorized: false, port: 1, urls: [] });
+    assert.equal(info.pairingCode, undefined);
+    assert.equal(info.paired, false);
+    assert.equal(info.loopback, false);
+    assert.equal(info.remote, true);
+    hub.pair(first, { ip: "2.2.2.2" });
+    assert.notEqual(hub.pairingCode(), first);
+    assert.equal(rotated.length, 1);
+    assert.throws(() => hub.pair(first, { ip: "2.2.2.3" }), /rejected/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

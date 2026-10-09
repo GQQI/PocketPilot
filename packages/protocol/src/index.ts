@@ -164,11 +164,22 @@ export interface HostView {
   demoMode: boolean;
   paired: boolean;
   loopback: boolean;
+  remote?: boolean;
   pairingCode?: string;
+}
+
+export interface DeviceView {
+  id: string;
+  name: string;
+  createdAt: number;
+  lastSeen: number;
+  expiresAt: number;
+  current: boolean;
 }
 
 export interface PairResult {
   token: string;
+  device?: DeviceView;
   host: HostView;
 }
 
