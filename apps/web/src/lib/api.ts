@@ -1,5 +1,7 @@
 import type { Bootstrap, ChatMessage, DeviceView, FileContent, FileEntry, FsListing, HostView, PairResult, SessionCreated, StreamEvent, TerminalEvent } from "@mobileagent/protocol";
 
+import { forgetRtc, rtcConfigured, rtcFetch } from "./rtc";
+
 const BRIDGE_KEY = "mobileagent.bridge";
 const TOKEN_KEY = "mobileagent.token";
 
@@ -30,6 +32,11 @@ function authHeaders(): HeadersInit {
   return token ? { authorization: `Bearer ${token}` } : {};
 }
 
+/** Uses the encrypted WebRTC tunnel when this phone was paired by QR, otherwise plain HTTP to the LAN bridge. */
+function transport(path: string, init?: RequestInit): Promise<Response> {
+  return rtcConfigured() ? rtcFetch(path, init) : fetch(resolve(path), init);
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
@@ -44,7 +51,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   const extra = authHeaders();
   for (const [key, value] of Object.entries(extra)) headers.set(key, value);
-  const response = await fetch(resolve(path), { ...init, headers });
+  const response = await transport(path, { ...init, headers });
   if (!response.ok) throw await toError(response);
   return response.json() as Promise<T>;
 }
@@ -73,7 +80,11 @@ export const api = {
       throw error;
     }
   },
+  deviceName,
+  adoptToken: (token: string) => writeStore(TOKEN_KEY, token),
+  remoteSession: () => request<{ url: string; expiresAt: number; qrSvg: string }>("/api/remote/session", { method: "POST" }),
   forgetHost: () => {
+    forgetRtc();
     writeStore(BRIDGE_KEY, "");
     writeStore(TOKEN_KEY, "");
   },
@@ -101,7 +112,7 @@ export const api = {
     stream(`/api/queue/${id}/run`, {}, onEvent, signal),
 };
 
-function deviceName(): string {
+export function deviceName(): string {
   const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
   const kind = /iPhone|iPad/.test(ua) ? "iPhone" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "Mac" : "Browser";
   return `${kind} ${new Date().toLocaleDateString()}`;
@@ -115,7 +126,7 @@ async function stream(path: string, body: unknown, onEvent: (event: never) => vo
   const headers = new Headers(json(body).headers);
   const extra = authHeaders();
   for (const [key, value] of Object.entries(extra)) headers.set(key, value);
-  const response = await fetch(resolve(path), { ...json(body), headers, signal });
+  const response = await transport(path, { ...json(body), headers, signal });
   if (!response.ok) throw await toError(response);
   await readSse(response, (data) => onEvent(data as never));
 }

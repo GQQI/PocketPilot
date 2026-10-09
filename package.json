@@ -12,7 +12,7 @@
     "build": "npm run icons && npm run build -w @mobileagent/web && npm run build -w @mobileagent/bridge",
     "start": "node scripts/serve-host.mjs",
     "host": "npm run build && node scripts/serve-host.mjs --lan",
-    "test": "npm run test -w @mobileagent/agent-core",
+    "test": "npm run test -w @mobileagent/agent-core && npm run test -w @mobileagent/remote",
     "typecheck": "npm run typecheck -w @mobileagent/agent-core && npm run typecheck -w @mobileagent/bridge && npm run typecheck -w @mobileagent/web",
     "desktop": "npm run build && npm run start -w @mobileagent/desktop",
     "desktop:dist": "npm run build && npm run dist -w @mobileagent/desktop",

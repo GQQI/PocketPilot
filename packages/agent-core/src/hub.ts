@@ -53,6 +53,8 @@ export interface HubOptions {
   /** Device token lifetime in days. Defaults to MOBILEAGENT_TOKEN_TTL_DAYS or 90. */
   tokenTtlDays?: number;
   onPairingCodeChange?: (code: string) => void;
+  /** Called after devices are added or revoked (remote transport re-subscribes / drops connections). */
+  onDevicesChange?: () => void;
 }
 
 const extras: AgentAdapter[] = [];
@@ -80,6 +82,8 @@ export interface DeviceRecord {
   createdAt: number;
   lastSeen: number;
   expiresAt: number;
+  /** Secret for the persisted WebRTC link of this device (remote pairing). Never leaves host.json / the paired phone. */
+  linkSecret?: string;
 }
 
 interface HostSecrets {
@@ -125,6 +129,7 @@ export class Hub {
   readonly remote: boolean;
   private readonly tokenTtlMs: number;
   private readonly onCode?: (code: string) => void;
+  private onDevices?: () => void;
   private fails = new Map<string, FailState>();
   private lastSeenSaved = 0;
 
@@ -135,6 +140,7 @@ export class Hub {
     const ttlDays = options.tokenTtlDays ?? Number(process.env.MOBILEAGENT_TOKEN_TTL_DAYS ?? DEFAULT_TOKEN_TTL_DAYS);
     this.tokenTtlMs = (Number.isFinite(ttlDays) && ttlDays > 0 ? ttlDays : DEFAULT_TOKEN_TTL_DAYS) * 86_400_000;
     this.onCode = options.onPairingCodeChange;
+    this.onDevices = options.onDevicesChange;
     mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
     this.settings = this.loadSettings();
     this.secrets = this.loadSecrets();
@@ -364,6 +370,35 @@ export class Hub {
     return { token, device: this.deviceView(device, device.id) };
   }
 
+  /** Issue a device token without a pairing code: only for the QR/WebRTC flow that has already proven possession of a one-time secret. */
+  grantDevice(name: string, linkSecret: string): { token: string; device: DeviceRecord } {
+    const now = Date.now();
+    const token = "mat_" + randomBytes(32).toString("hex");
+    const device: DeviceRecord = {
+      id: "dev_" + randomBytes(6).toString("hex"),
+      name: name.trim().slice(0, 60) || "Phone",
+      tokenHash: hashToken(token),
+      createdAt: now,
+      lastSeen: now,
+      expiresAt: now + this.tokenTtlMs,
+      linkSecret,
+    };
+    this.hostSecrets.devices.push(device);
+    this.saveHostSecrets();
+    this.onDevices?.();
+    return { token, device };
+  }
+
+  /** Live (unexpired) devices that have a WebRTC link. */
+  deviceLinks(): Array<{ id: string; linkSecret: string }> {
+    const now = Date.now();
+    return this.hostSecrets.devices.filter((d) => d.linkSecret && d.expiresAt > now).map((d) => ({ id: d.id, linkSecret: d.linkSecret as string }));
+  }
+
+  setDevicesListener(listener: () => void): void {
+    this.onDevices = listener;
+  }
+
   /** Regenerate the pairing code (remote mode does this after every pairing and every lockout). */
   rotatePairingCode(): string {
     this.hostSecrets.code = makePairingCode();
@@ -405,6 +440,7 @@ export class Hub {
     this.hostSecrets.devices = this.hostSecrets.devices.filter((device) => device.id !== id);
     if (this.hostSecrets.devices.length === before) throw new HubError("unknown device", 404, "device");
     this.saveHostSecrets();
+    this.onDevices?.();
     return this.listDevices();
   }
 

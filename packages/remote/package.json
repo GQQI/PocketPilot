@@ -1,0 +1,22 @@
+{
+  "name": "@mobileagent/remote",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "tsx --test --test-force-exit src/remote.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "node-datachannel": "0.33.4",
+    "tsx": "^4.20.6",
+    "typescript": "~6.0.2"
+  },
+  "dependencies": {
+    "mqtt": "5.16.0"
+  }
+}
