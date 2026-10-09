@@ -15,7 +15,8 @@ const links: { to: string; key: CopyKey; icon: typeof LayoutGrid }[] = [
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { data, loading, error, notice, needsPair, refresh, t, locale } = useApp();
+  const { data, loading, error, notice, needsPair, refresh, t, locale, setNotice } = useApp();
+  const gated = needsPair && !data;
   return (
     <div className="relative h-dvh">
       <div className="mx-auto flex h-full w-full max-w-[1240px] flex-col md:flex-row">
@@ -46,7 +47,14 @@ export function Shell({ children }: { children: ReactNode }) {
           {links.map((link) => {
             const Icon = link.icon;
             return (
-              <NavLink key={link.to} to={link.to} end={link.to === "/"}>
+              <NavLink
+                key={link.to}
+                to={link.to}
+                end={link.to === "/"}
+                onClick={() => {
+                  if (gated) setNotice(locale === "zh" ? "请先完成配对后再使用" : "Pair this device first");
+                }}
+              >
                 <Icon size={18} />
                 <span>{t(link.key)}</span>
               </NavLink>
