@@ -33,6 +33,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@mobileagent/remote": fileURLToPath(new URL("../../packages/remote/src/index.ts", import.meta.url)),
       "@mobileagent/protocol": fileURLToPath(new URL("../../packages/protocol/src/index.ts", import.meta.url)),
     },
   },

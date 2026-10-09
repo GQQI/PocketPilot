@@ -34,3 +34,46 @@ curl http://127.0.0.1:47299/api/host              # 无 pairingCode, remote:true
 
 ### 未完成/注意
 - 远程模式下桌面本地 UI 也需要配对（不再免认证）；Electron 默认未启用远程模式。
+
+## 阶段 2+3：二维码配对 + WebRTC 数据通道（已完成，见“未完成/风险”）
+
+### 架构
+```
+手机 PWA ──(加密信令, 公共 MQTT wss, 多 broker 并发)── 电脑 bridge
+   └────────── WebRTC DataChannel（P2P，STUN 打洞）──────────┘
+        帧：req / res / chunk / end / err / abort / ping（AES-GCM 端到端加密）
+        电脑把帧交给 app.fetch（无 socket ⇒ 永远非回环 ⇒ 必须带设备 token）
+```
+- 二维码内容：`<PWA地址>/#pair=<会话ID>.<32字节随机密钥>`。密钥在 URL **fragment**，不会发给任何网页服务器；5 分钟有效、一次性（首次 hello 后作废）。
+- 密钥派生（WebCrypto）：HKDF(密钥, "mobileagent/v1/<sid>") → MQTT 主题（随机且只有持密钥者能算出）+ 信令 AES-GCM 密钥；每次连接双方生成临时 ECDH P-256，公钥放在加密信令里（持密钥才能伪造）；会话密钥 = HKDF(ECDH 共享秘密, salt=SHA256(密钥‖sid), info=方向‖双方公钥)，两个方向独立密钥，帧 IV=递增计数器（防重放）。
+- 配对成功后电脑下发：设备 token + 持久 `linkSecret`；之后手机凭 linkSecret 重连（主题/信令密钥由 linkSecret 派生），无需再扫码；撤销设备即退订并断开该连接。
+- 信令 broker：EMQX、HiveMQ、Mosquitto、Eclipse 的 wss 地址同时连接、同时发布，任一可用即可（`MOBILEAGENT_BROKERS` 可覆盖）。STUN：Google ×2、Cloudflare、Twilio（`MOBILEAGENT_STUN` 可覆盖）。
+- 打洞失败/无响应/信令不可达都会抛出带中文提示的 `RemoteError`（code: signal / no-host / ice / closed / expired）。
+- SSE 响应经数据通道以 chunk 帧流式返回，web 端 `api.ts` 仅把 `fetch` 换成 `transport()`，其余代码不变。
+
+### 改动清单
+- 新包 `packages/remote`：`crypto.ts`、`frames.ts`（加密+分片+背压）、`signaling.ts`（MqttBus/MemoryBus）、`host.ts`（RemoteHost）、`client.ts`（RemoteClient）、`errors.ts`、`remote.test.ts`。
+- `packages/agent-core/src/hub.ts`：`grantDevice`（无配对码发令牌，仅供已证明持有一次性密钥的 QR 流程）、`deviceLinks`、`setDevicesListener`、设备 `linkSecret`。
+- `apps/bridge/src/remote.ts`（新）+ `main.ts`：`MOBILEAGENT_RTC=1` 启用；启动时终端打印二维码；`POST /api/remote/session`（需认证）返回二维码 SVG；rtc 请求按连接 id 限速。`package.json` 构建把 `node-datachannel` 设为 external。
+- `apps/web`：`lib/rtc.ts`、`components/remote-pair.tsx`（设置页“生成二维码 / 扫码配对 / 粘贴链接”，`#pair=` 落地页，jsQR 摄像头扫码）、`api.ts`（transport 切换、`adoptToken`）、`App.tsx`、i18n。
+
+### 运行与验证
+```
+npm install
+# 电脑端（建议同时开远程模式）：
+MOBILEAGENT_RTC=1 MOBILEAGENT_REMOTE=1 npm run host      # 终端显示二维码；设置页也可“生成二维码”
+# 手机：系统相机扫码打开链接，或在 PWA 设置页点“扫码配对”
+npm test            # agent-core 5 项 + remote 3 项
+npm run typecheck && npm run build
+```
+- `packages/remote` 测试覆盖：信令加密（错密钥/篡改/换主题均失败）、ECDH 方向密钥与重放拒绝、完整 QR 配对 → link 重连 → 请求/401/大请求体/300KB 响应/SSE 流/非 /api 路径拒绝/二维码一次性/撤销后无法重连（WebRTC 用 node-datachannel 真实数据通道）。
+- 已在 Linux 沙箱跑通上述全部测试、typecheck、web+bridge build；在用户 Windows 上验证了：真实公共 MQTT broker（EMQX、HiveMQ）收发成功、bridge 启动打印二维码、`/api/remote/session` 无 token → 401。
+
+### 未完成 / 风险
+1. **PWA 托管**：手机在外网时打不开电脑上的 PWA。需把 `apps/web/dist` 部署到免费静态托管（GitHub Pages/Cloudflare Pages/Netlify），并用 `MOBILEAGENT_PWA_URL=https://xxx` 让二维码指向它（密钥在 fragment，托管方看不到）。PWA 本身是静态页面，API 仍走 P2P。未做该部署与 Pages 的 base path 适配。
+2. **无 TURN**：免费公共 TURN 不可靠，对称型 NAT/部分运营商 CGNAT 打洞会失败（会给出明确提示，无自动中继回退）。
+3. **未在真实手机 + 跨网络上端到端实测**。在用户 Windows 机器上，同进程两个 node-datachannel 端点互连失败（疑似本机虚拟网卡/环境问题，同样代码在 Linux 通过），所以 WebRTC 部分的自动化测试只在 Linux 通过；请用真机验证。
+4. 浏览器端 `mqtt` + WebRTC 的打包已 build 通过，但未在真机浏览器/iOS Safari 运行验证；iOS 摄像头扫码需 HTTPS（托管在 Pages 满足；LAN http 页面无法调用摄像头，可用系统相机扫码或粘贴链接）。
+5. Electron 桌面打包需把 `node-datachannel` 原生模块随 `resources` 一起发布（`electron-builder.yml` 未改）；缺失时 bridge 会打印 “remote disabled” 并正常运行。
+6. `linkSecret` 以明文存于 host.json（0600，同 API key 的处理方式）；公共 broker 可看到加密后的信令元数据（主题、时间、大小），无法解密。
+7. 远程模式下桌面本地 UI 也需配对；Electron 默认未设置 `MOBILEAGENT_RTC/REMOTE`。

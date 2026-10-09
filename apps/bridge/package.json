@@ -6,16 +6,20 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "node dist/server.cjs",
-    "build": "esbuild src/main.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs --external:fsevents",
+    "build": "esbuild src/main.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs --external:fsevents --external:node-datachannel",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.6",
     "@mobileagent/agent-core": "0.1.0",
-    "hono": "^4.10.3"
+    "@mobileagent/remote": "0.1.0",
+    "hono": "^4.10.3",
+    "node-datachannel": "^0.33.4",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
+    "@types/qrcode": "^1.5.6",
     "esbuild": "^0.25.11",
     "tsx": "^4.20.6",
     "typescript": "~6.0.2"

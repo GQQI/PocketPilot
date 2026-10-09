@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import type { Context } from "hono";
+import { startRemote, type RemoteService } from "./remote";
 
 const hub = createHub({
   onPairingCodeChange: (code) => console.log(`  pairing code rotated: ${code}`),
@@ -16,6 +17,7 @@ const app = new Hono();
 const staticDir = process.env.MOBILEAGENT_STATIC;
 const port = Number(process.env.MOBILEAGENT_PORT ?? 47232);
 const hostname = process.env.HOST ?? "127.0.0.1";
+let remote: RemoteService | null = null;
 
 app.onError((error, c) => {
   if (error instanceof HubError) return c.json({ error: error.message, code: error.code }, error.status as 400);
@@ -72,6 +74,10 @@ app.post("/api/pair", async (c) => {
 });
 app.get("/api/devices", (c) => c.json(hub.listDevices(hub.authenticate(c.req.header("authorization"))?.id)));
 app.delete("/api/devices/:id", (c) => c.json(hub.revokeDevice(c.req.param("id"))));
+app.post("/api/remote/session", async (c) => {
+  if (!remote) return c.json({ error: "remote transport is disabled (start with MOBILEAGENT_RTC=1)", code: "rtc-disabled" }, 503);
+  return c.json(await remote.createSession(pwaBaseUrl()));
+});
 app.get("/api/fs", (c) => c.json(hub.listDirs(c.req.query("path") ?? "")));
 
 app.post("/api/settings", async (c) => c.json(hub.updateSettings(await c.req.json())));
@@ -139,6 +145,25 @@ serve({ fetch: app.fetch, port, hostname }, () => {
   if (hub.remote) console.log("  remote mode: loopback is NOT trusted, every client must pair");
 });
 
+if (process.env.MOBILEAGENT_RTC === "1") {
+  void (async () => {
+    remote = await startRemote(hub, (request) => app.fetch(request), (message) => console.log(`  [remote] ${message}`));
+    if (!remote) return;
+    const session = await remote.createSession(pwaBaseUrl());
+    console.log("  Scan with the phone camera (expires in 5 min, one use):");
+    console.log(await remote.terminalQr(session.url));
+    console.log(`  ${session.url}`);
+  })();
+}
+
+function pwaBaseUrl(): string {
+  if (process.env.MOBILEAGENT_PWA_URL) return process.env.MOBILEAGENT_PWA_URL;
+  // Prefer a typical home/office LAN address over virtual adapters (docker/WSL use 172.x).
+  const rank = (url: string) => (url.includes("//192.168.") ? 0 : url.includes("//10.") ? 1 : 2);
+  const urls = phoneUrls(port, Boolean(staticDir)).filter((url) => !url.includes("127.0.0.1")).sort((x, y) => rank(x) - rank(y));
+  return urls[0] ?? `http://127.0.0.1:${port}`;
+}
+
 async function sseFrom(c: Context, source: AsyncIterable<unknown>) {
   const iterator = source[Symbol.asyncIterator]();
   let first: IteratorResult<unknown>;
@@ -180,7 +205,8 @@ function clientIp(c: Context): string {
   try {
     return getConnInfo(c).remote.address ?? "unknown";
   } catch {
-    return "tunnel";
+    // No socket: the request was injected by the WebRTC transport, which tags it with a per-connection id.
+    return `rtc:${c.req.header("x-mobileagent-peer") ?? "?"}`;
   }
 }
 
