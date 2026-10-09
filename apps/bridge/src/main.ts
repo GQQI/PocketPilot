@@ -159,7 +159,8 @@ if (process.env.MOBILEAGENT_RTC === "1") {
 function pwaBaseUrl(): string {
   if (process.env.MOBILEAGENT_PWA_URL) return process.env.MOBILEAGENT_PWA_URL;
   // Prefer a typical home/office LAN address over virtual adapters (docker/WSL use 172.x).
-  const rank = (url: string) => (url.includes("//192.168.") ? 0 : url.includes("//10.") ? 1 : 2);
+  // Host-side addresses of VMware/Hyper-V/Docker virtual networks usually end in .1: push them last.
+  const rank = (url: string) => (/\.1:\d+$/.test(url) ? 5 : 0) + (url.includes("//192.168.") ? 0 : url.includes("//10.") ? 1 : 2);
   const urls = phoneUrls(port, Boolean(staticDir)).filter((url) => !url.includes("127.0.0.1")).sort((x, y) => rank(x) - rank(y));
   return urls[0] ?? `http://127.0.0.1:${port}`;
 }

@@ -18,7 +18,8 @@ export const DEFAULT_STUN = [
 ];
 
 export function iceConfig(urls: string[] = DEFAULT_STUN): RTCIceServer[] {
-  return urls.length ? [{ urls }] : [];
+  // One entry per URL: node-datachannel on Windows fails ICE entirely when several STUN URLs share one RTCIceServer.
+  return urls.map((url) => ({ urls: url }));
 }
 
 export interface SignalBus {
