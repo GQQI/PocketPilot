@@ -1,7 +1,7 @@
 import type { FileContent, FileEntry } from "@mobileagent/protocol";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { Button, Input } from "@/components/ui";
+import { Button, Input, EmptyState } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/store";
 
@@ -21,7 +21,7 @@ export function ProjectsPage() {
         </button>
       </div>
       <div className="mt-5 space-y-3">
-        {projects.length === 0 ? <p className="text-sm text-mute">{t("projects.empty")}</p> : null}
+        {projects.length === 0 ? <EmptyState text={t("projects.empty")} /> : null}
         {projects.map((project) => {
           const provider = data.providers.find((item) => item.meta.id === project.providerId);
           return (

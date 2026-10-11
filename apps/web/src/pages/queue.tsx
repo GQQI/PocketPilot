@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Button } from "@/components/ui";
+import { Button, EmptyState } from "@/components/ui";
 import { api } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import { useApp } from "@/lib/store";
@@ -32,7 +32,7 @@ export function QueuePage() {
       <h1 className="display text-4xl">{t("queue.title")}</h1>
       <h2 className="mt-5 text-sm text-mute">{t("queue.waiting")}</h2>
       <div className="mt-3 space-y-3">
-        {waiting.length === 0 ? <p className="text-sm text-mute">{t("queue.empty")}</p> : null}
+        {waiting.length === 0 ? <EmptyState text={t("queue.empty")} /> : null}
         {waiting.map((item) => (
           <article key={item.id} className="row-card px-4 py-3">
             <div className="text-xs text-accent">{providerName(item.providerId)} · {item.status}</div>

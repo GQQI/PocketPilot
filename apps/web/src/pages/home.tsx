@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { DirectoryPicker } from "@/components/directory-picker";
 import { Mark } from "@/components/shell";
-import { Button, Modal } from "@/components/ui";
+import { Button, Modal, EmptyState } from "@/components/ui";
 import { api } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import type { CopyKey } from "@/lib/i18n";
@@ -66,7 +66,7 @@ export function HomePage() {
 
       <h2 className="mt-6 text-sm text-mute">{t("home.recent")}</h2>
       <div className="mt-3 space-y-2">
-        {sessions.length === 0 ? <p className="text-sm text-mute">{t("home.empty")}</p> : null}
+        {sessions.length === 0 ? <EmptyState text={t("home.empty")} /> : null}
         {sessions.slice(0, 4).map((session) => (
           <button key={session.id} type="button" className="row-card block w-full px-4 py-3 text-left" onClick={() => navigate(`/chat/${session.id}`)}>
             <div className="flex items-center justify-between gap-3">

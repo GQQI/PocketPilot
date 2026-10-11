@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
 import { Mark } from "@/components/shell";
 import { RichText } from "@/components/rich-text";
-import { Button, Modal, Textarea } from "@/components/ui";
+import { Button, Modal, Textarea, EmptyState } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { useApp } from "@/lib/store";
 
@@ -101,33 +101,33 @@ export function ChatPage() {
         <div className="flex min-w-0 items-center gap-3">
           <Mark monogram={provider.meta.monogram} accent={provider.meta.accent} />
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-medium">{session.title}</h1>
+            <h1 className="truncate text-lg font-semibold leading-tight">{session.title}</h1>
             <p className="truncate text-xs text-mute">{provider.meta.name} · {t("chat.fromPc")}</p>
             <p className="truncate text-xs text-mute">{data.settings.workspacePath || project?.path}</p>
           </div>
         </div>
         <Button size="sm" variant="soft" onClick={() => setCreating(true)}>{t("chat.new")}</Button>
       </div>
-      <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+      <div className="app-scroll mt-3 flex gap-2 overflow-x-auto px-0.5 pb-2">
         {related.map((item) => (
           <button
             key={item.id}
             type="button"
-            className={item.id === session.id ? "shrink-0 rounded-full bg-accent px-3 py-1 text-xs text-on" : "shrink-0 rounded-full bg-soft px-3 py-1 text-xs text-mute"}
+            className={item.id === session.id ? "chip chip-on" : "chip"}
             onClick={() => navigate(`/chat/${item.id}`)}
           >
             {item.title}
           </button>
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-2 rounded-full bg-soft p-1 text-sm">
-        <button type="button" className={pane === "chat" ? "rounded-full bg-accent text-on" : "text-mute"} onClick={() => setPane("chat")}>{t("chat.talk")}</button>
-        <button type="button" className={pane === "terminal" ? "rounded-full bg-accent text-on" : "text-mute"} onClick={() => setPane("terminal")}>{t("chat.term")}</button>
+      <div className="seg mt-3">
+        <button type="button" className={pane === "chat" ? "seg-btn seg-on" : "seg-btn"} onClick={() => setPane("chat")}>{t("chat.talk")}</button>
+        <button type="button" className={pane === "terminal" ? "seg-btn seg-on" : "seg-btn"} onClick={() => setPane("terminal")}>{t("chat.term")}</button>
       </div>
       <div ref={scroller} data-testid="agent-output" className="app-scroll mt-3 min-h-0 flex-1 overflow-y-auto pb-3">
         {pane === "chat" ? (
           <div className="space-y-4">
-            {messages.length === 0 ? <p className="text-sm text-mute">{t("chat.empty")}</p> : null}
+            {messages.length === 0 ? <EmptyState text={t("chat.empty")} /> : null}
             {messages.map((message) => <MessageView key={message.id} message={message} name={provider.meta.name} />)}
             {live ? <LiveView live={live} name={provider.meta.name} /> : null}
           </div>
@@ -146,7 +146,7 @@ export function ChatPage() {
         <form className="pb-3" onSubmit={(event) => { event.preventDefault(); void send(draft); }}>
           <div className="mb-2 flex gap-2 overflow-x-auto">
             {ideas(provider.meta.id).map((idea) => (
-              <button key={idea} type="button" className="shrink-0 rounded-full border border-line bg-panel px-3 py-1 text-xs text-mute" onClick={() => setDraft(idea)}>
+              <button key={idea} type="button" className="chip" onClick={() => setDraft(idea)}>
                 {idea}
               </button>
             ))}
