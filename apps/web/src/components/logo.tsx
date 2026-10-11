@@ -1,18 +1,15 @@
-/** PocketPilot mark: a phone outline with a navigation pointer. Same artwork as public/favicon.svg. */
+/** PocketPilot mark: three robots (one in front, two partners behind) — same artwork as public/favicon.svg. */
 export function Logo({ size = 28, className }: { size?: number; className?: string }) {
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 64 64" role="img" aria-label="PocketPilot">
-      <defs>
-        <linearGradient id="pp-logo-g" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#5b97ff" />
-          <stop offset="0.55" stopColor="#2f6fed" />
-          <stop offset="1" stopColor="#1d4fc4" />
-        </linearGradient>
-      </defs>
-      <rect width="64" height="64" rx="15" fill="url(#pp-logo-g)" />
-      <rect x="20.5" y="9.5" width="23" height="45" rx="6.5" fill="none" stroke="#fff" strokeWidth="3" />
-      <rect x="28" y="13.5" width="8" height="2.4" rx="1.2" fill="#fff" fillOpacity=".7" />
-      <path d="M32 22.5 L41.2 43.5 L32 38.2 L22.8 43.5 Z" fill="#fff" stroke="#fff" strokeWidth="1.6" strokeLinejoin="round" />
+      <rect width="64" height="64" rx="15" fill="#2f6fed" />
+      <rect x="3" y="31" width="21" height="21" rx="7" fill="#fff" />
+      <rect x="41" y="27" width="21" height="25" rx="7" fill="#fff" />
+      <g fill="#2f6fed"><circle cx="8" cy="40" r="2.4" /><circle cx="13" cy="40" r="2.4" /><circle cx="52" cy="37" r="2.4" /><circle cx="57" cy="37" r="2.4" /></g>
+      <path d="M32 21V15" stroke="#fff" strokeWidth="4.4" strokeLinecap="round" />
+      <circle cx="32" cy="12" r="4.8" fill="#fff" />
+      <rect x="18" y="21" width="28" height="31" rx="9.5" fill="#fff" stroke="#2f6fed" strokeWidth="2.6" />
+      <circle cx="26.5" cy="37" r="4.6" fill="#2f6fed" /><circle cx="37.5" cy="37" r="4.6" fill="#2f6fed" />
     </svg>
   );
 }

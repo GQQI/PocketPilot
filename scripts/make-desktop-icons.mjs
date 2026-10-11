@@ -1,4 +1,5 @@
-// Renders apps/web/public/favicon.svg into the desktop app icons: build/icon.ico (16..256), build/icon.png (512), build/tray.png (32).
+// Renders the brand mark into the desktop app icons: build/icon.ico (16..256), build/icon.png (512), build/tray.png (32), build/tray-16.png.
+// Small sizes (<= 32px) use apps/web/public/icon-tray.svg: the same three robots without antennas, so they stay readable.
 // Uses the Playwright Chromium that is already a dev dependency. Run: node scripts/make-desktop-icons.mjs
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -6,11 +7,11 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const svg = readFileSync(path.join(root, "apps/web/public/favicon.svg"), "utf8");
+const full = readFileSync(path.join(root, "apps/web/public/favicon.svg"), "utf8");
+const small = readFileSync(path.join(root, "apps/web/public/icon-tray.svg"), "utf8");
 const outDir = path.join(root, "apps/desktop/build");
 mkdirSync(outDir, { recursive: true });
 
-// Falls back to any Chromium found in the Playwright cache when the exact revision for this Playwright version is missing.
 async function launch() {
   try {
     return await chromium.launch();
@@ -28,14 +29,17 @@ async function launch() {
 }
 const browser = await launch();
 const page = await browser.newPage({ deviceScaleFactor: 1 });
-async function render(size) {
+async function render(size, svg) {
   await page.setViewportSize({ width: size, height: size });
   await page.setContent(`<style>html,body{margin:0;background:transparent}svg{display:block;width:${size}px;height:${size}px}</style>${svg}`);
   return page.screenshot({ omitBackground: true, clip: { x: 0, y: 0, width: size, height: size } });
 }
 const sizes = [16, 24, 32, 48, 64, 128, 256];
 const pngs = new Map();
-for (const size of [...sizes, 512]) pngs.set(size, await render(size));
+for (const size of sizes) pngs.set(size, await render(size, size <= 32 ? small : full));
+const icon512 = await render(512, full);
+const tray32 = pngs.get(32);
+const tray16 = pngs.get(16);
 await browser.close();
 
 // ICO container with embedded PNG images (Windows Vista+).
@@ -52,6 +56,7 @@ entries.forEach((entry, i) => {
   offset += entry.data.length;
 });
 writeFileSync(path.join(outDir, "icon.ico"), Buffer.concat([header, ...entries.map((e) => e.data)]));
-writeFileSync(path.join(outDir, "icon.png"), pngs.get(512));
-writeFileSync(path.join(outDir, "tray.png"), pngs.get(32));
+writeFileSync(path.join(outDir, "icon.png"), icon512);
+writeFileSync(path.join(outDir, "tray.png"), tray32);
+writeFileSync(path.join(outDir, "tray-16.png"), tray16);
 console.log("wrote", outDir);

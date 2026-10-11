@@ -110,7 +110,7 @@ export async function notifyTask(note: TaskNote): Promise<"inapp" | "system" | "
       if ((await LocalNotifications.checkPermissions()).display !== "granted") {
         if ((await LocalNotifications.requestPermissions()).display !== "granted") return "none";
       }
-      await LocalNotifications.schedule({ notifications: [{ id: nextId++, title: note.title, body: note.body }] });
+      await LocalNotifications.schedule({ notifications: [{ id: nextId++, title: note.title, body: note.body, smallIcon: "ic_stat_pocketpilot" }] });
       return "system";
     }
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
