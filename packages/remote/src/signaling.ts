@@ -94,6 +94,11 @@ export class MqttBus implements SignalBus {
     };
   }
 
+  /** Number of brokers currently connected, and how many were configured. */
+  stats(): { connected: number; total: number } {
+    return { connected: this.connected, total: this.clients.length };
+  }
+
   ready(timeoutMs: number): Promise<boolean> {
     if (this.connected > 0) return Promise.resolve(true);
     return new Promise((resolve) => {

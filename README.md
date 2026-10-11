@@ -56,15 +56,11 @@ flowchart LR
 
 ## 在 Windows 上让手机连上电脑
 
-把仓库放到 `D:\Project\AgentFrame`，目录就是仓库根目录。
+1. 安装 `PocketPilot-Setup.exe`（构建见下文“Windows 桌面程序”），从桌面图标打开 **PocketPilot 口袋领航**。
+2. 窗口里会显示服务状态（一键启动/停止）、局域网地址、跨网络通道状态，以及大号配对二维码和 6 位配对码。
+3. 手机安装 APK（`npm run android:debug` 产出 `dist-android\PocketPilot-debug.apk`），打开后扫描二维码；同一网络下也可以填 `http://电脑IP:47241` 加配对码。
 
-```powershell
-cd D:\Project\PocketPilot
-npm install
-npm run host
-```
-
-`npm run host` 会先构建，再让宿主监听 `0.0.0.0`。终端打印局域网地址和六位配对码。手机和电脑在同一网络时，用手机浏览器打开那个地址，输入配对码。配对码也显示在电脑本机打开的设置页里。本机访问 `127.0.0.1` 不需要填配对码。
+对外服务始终要求配对，桌面窗口本身不需要。高级用法（命令行 host）：`npm run host`，终端会打印局域网地址和配对码，见使用指南第 9 节。
 
 之后手机上的流程：
 
@@ -155,38 +151,25 @@ npm start
 
 用手机或电脑上的 Chrome / Edge 打开宿主地址，选「安装应用」。`apps/web` 在生产构建里带有 Web App Manifest。开发服务器不注册 service worker，避免把旧界面缓存住。
 
-### Windows 安装包
+### Windows 桌面程序（安装包）
 
-在 Windows 上，于 `D:\Project\PocketPilot`：
+在 Windows 上，于仓库根目录：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
-```
-
-或者：
-
-```bash
 npm install
 npm run desktop:dist:win
 ```
 
-安装包在 `apps\desktop\release\PocketPilot-Setup-*.exe`（NSIS，可选安装目录）。Electron 会拉起桥接再打开窗口。签名默认关闭，方便在没有证书的机器上打包。
+产物在 `dist-desktop\`：`PocketPilot-Setup-<版本>.exe`（NSIS，可选安装目录，带桌面快捷方式）和 `PocketPilot-Portable-<版本>.zip`（便携版）。安装后双击图标即可使用，不需要命令行：窗口里启动/停止服务、查看局域网地址与跨网络状态、显示配对二维码和配对码、管理已配对设备和设置；关闭窗口最小化到系统托盘。桌面程序内嵌 bridge（子进程，崩溃自动重启），跨网络依赖的原生模块 `node-datachannel` 放在 `app.asar` 之外（`extraResources`），安装后可用。签名默认关闭。
 
-当前这台 Linux 环境可以先打未打包目录：
+Node 20 上运行 electron-builder 若报 `ERR_REQUIRE_ESM`，先设 `$env:NODE_OPTIONS="--experimental-require-module"`；下载受限时设 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`。详见 [docs/使用指南.md](docs/使用指南.md)。
 
-```bash
-npm run desktop:dist
-```
-
-没有 Wine 时不要指望在 Linux 上产出 NSIS。脚本已经写好，换到 Windows 上跑即可。
-
-### 桌面壳调试
+### 桌面程序调试
 
 ```bash
-npm run desktop
+npm run desktop          # 构建后用 Electron 运行桌面程序（默认端口 47241）
+npm run desktop:smoke    # 端到端自检并截图
 ```
-
-这会先构建界面和桥接，再用 Electron 打开。桌面壳使用端口 `47241`，避免和 `npm run dev` 冲突。
 
 ## 演示模式里有什么
 
@@ -244,17 +227,11 @@ The phone chooses an agent, picks a project directory on that PC, and sends a me
 
 Keys never go into git. Environment variables win; otherwise they are stored on the PC in `~/.pocketpilot/secrets.json` with mode `0600`. Connection settings and the theme live in `~/.pocketpilot/settings.json`. The pairing code lives in `~/.pocketpilot/host.json`.
 
-## Run the host on Windows so a phone can connect
+## Install the desktop app on Windows so a phone can connect
 
-Put the repo at `D:\Project\PocketPilot`. The repository root is the app root.
+Install `PocketPilot-Setup.exe` (see Install below) and open **PocketPilot**. The window shows the service status (one-click start/stop), the LAN address, the remote channel status, a large pairing QR code (a `#pair=` link), the six-character pairing code, and the list of paired devices. Install the Android APK on the phone and scan the QR code. On the same network you can instead enter `http://<pc-ip>:47241` plus the pairing code. Closing the window minimizes to the tray; the service keeps running. Outside connections always require pairing.
 
-```powershell
-cd D:\Project\PocketPilot
-npm install
-npm run host
-```
-
-`npm run host` builds, then listens on `0.0.0.0`. The terminal prints LAN URLs and a six-character pairing code. On the same network, open that URL in the phone browser and enter the code. The code is also shown in Settings when you open the page on the PC itself. `127.0.0.1` does not ask for the code.
+Advanced / headless: `npm run host` builds and listens on `0.0.0.0` with a pairing code printed in the terminal (see `docs/使用指南.md`).
 
 On the phone:
 
@@ -302,15 +279,14 @@ On Windows, if the CLI is a `.cmd` shim, paste the full path into the command fi
 
 PWA: `npm run build && npm start`, then use the browser's install action on the phone or the PC. The manifest is emitted by the production build.
 
-Windows installer, from `D:\Project\PocketPilot`:
+Windows desktop app (installer): build it on Windows with
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
+npm install
+npm run desktop:dist:win
 ```
 
-The NSIS package is written to `apps\desktop\release`. `npm run desktop:dist` builds an unpacked Linux directory in this environment. Producing NSIS wants Windows (or Wine); the script is ready either way.
-
-`npm run desktop` builds the UI and bridge, then opens Electron on port `47241`.
+The NSIS installer `PocketPilot-Setup-<version>.exe` and a portable zip are written to `dist-desktop\`. Double-click to install, open PocketPilot from the desktop shortcut, and use the window to start/stop the service and show the pairing QR code. No command line is needed. `npm run desktop` runs the same app from source. The native WebRTC module (`node-datachannel`) ships outside `app.asar` (`extraResources`), so remote pairing works in the installed app.
 
 Screenshots of the main flows (with `npm run dev` already running):
 

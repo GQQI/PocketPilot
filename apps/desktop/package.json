@@ -1,14 +1,14 @@
 {
   "name": "@pocketpilot/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "PocketPilot (口袋领航) desktop shell",
+  "description": "PocketPilot (口袋领航) desktop host: window, tray and built-in bridge service",
   "author": "PocketPilot",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --linux dir",
-    "dist:win": "electron-builder --win nsis --publish never"
+    "dist:win": "electron-builder --win nsis zip --publish never"
   },
   "devDependencies": {
     "electron": "37.10.3",

@@ -18,6 +18,8 @@
     "desktop:dist": "npm run build && npm run dist -w @pocketpilot/desktop",
     "desktop:dist:win": "npm run build && npm run dist:win -w @pocketpilot/desktop",
     "icons": "node scripts/make-icons.mjs",
+    "desktop:icons": "node scripts/make-desktop-icons.mjs",
+    "desktop:smoke": "node --import tsx scripts/desktop-smoke.mjs",
     "android:icons": "node scripts/make-android-icons.mjs",
     "android:debug": "node scripts/build-android.mjs debug",
     "android:release": "node scripts/build-android.mjs release",
