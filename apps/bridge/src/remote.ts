@@ -12,6 +12,7 @@ export interface RemoteSession {
 export interface RemoteService {
   createSession(baseUrl: string): Promise<RemoteSession>;
   terminalQr(url: string): Promise<string>;
+  stats(): { mqttConnected: number; mqttTotal: number; connections: number; links: number };
   close(): void;
 }
 
@@ -58,6 +59,7 @@ export async function startRemote(hub: Hub, handle: (request: Request) => Respon
 
   return {
     createSession,
+    stats: () => ({ mqttConnected: bus.stats().connected, mqttTotal: bus.stats().total, ...host.stats() }),
     terminalQr: (url) => QRCode.toString(url, { type: "terminal", small: true }),
     close: () => {
       host.close();

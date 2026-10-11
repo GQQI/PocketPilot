@@ -1,29 +1,64 @@
 appId: com.pocketpilot.desktop
 productName: PocketPilot
+copyright: PocketPilot
 directories:
-  output: release
+  output: ../../dist-desktop
+compression: maximum
+electronLanguages:
+  - zh-CN
+  - en-US
 files:
   - main.cjs
+  - preload.cjs
+  - renderer/**
+# The bridge, the web UI and the native WebRTC module live OUTSIDE app.asar (extraResources are never packed into
+# the asar), so node-datachannel's .node binary can be loaded by the bridge child process (the same effect as asarUnpack).
 extraResources:
   - from: ../bridge/dist
     to: bridge
   - from: ../web/dist
     to: web
+  - from: build
+    to: build
+    filter:
+      - icon.png
+      - tray.png
+  - from: ../../node_modules/node-datachannel
+    to: bridge/node_modules/node-datachannel
+    filter:
+      - package.json
+      - dist/**
+      - lib/**
+  - from: ../../node_modules/detect-libc
+    to: bridge/node_modules/detect-libc
 win:
   target:
-    - nsis
-  signAndEditExecutable: false
-  icon: ../web/public/icons/icon-512.png
+    - target: nsis
+      arch: x64
+    - target: zip
+      arch: x64
+  icon: build/icon.ico
+  artifactName: PocketPilot-Portable-${version}.${ext}
+  extraResources:
+    - from: ../../node_modules/@node-datachannel/win32-x64-msvc
+      to: bridge/node_modules/@node-datachannel/win32-x64-msvc
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: PocketPilot 口袋领航
+  runAfterFinish: true
+  language: "2052"
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
   artifactName: PocketPilot-Setup-${version}.${ext}
 linux:
   target:
     - dir
-  icon: ../web/public/icons/icon-512.png
+  icon: build/icon.png
 mac:
   target:
     - dir
-  icon: ../web/public/icons/icon-512.png
+  icon: build/icon.png

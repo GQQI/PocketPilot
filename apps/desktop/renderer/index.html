@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PocketPilot 口袋领航</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <img class="logo" src="logo.svg" alt="">
+    <div><div class="brand-name">PocketPilot</div><div class="brand-sub" data-i18n="brandSub">口袋领航 · 电脑端</div></div>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="home" data-i18n="tabHome">主页</button>
+    <button class="tab" data-tab="settings" data-i18n="tabSettings">设置</button>
+  </nav>
+  <div class="pill" id="topPill"><span class="dot"></span><span id="topPillText">…</span></div>
+</header>
+
+<main>
+  <section id="page-home" class="page">
+    <div class="grid">
+      <div class="col">
+        <article class="card" id="statusCard">
+          <div class="card-head">
+            <h2 data-i18n="statusTitle">服务状态</h2>
+            <label class="switch" title=""><input type="checkbox" id="serviceSwitch"><span class="track"></span></label>
+          </div>
+          <div class="big-state"><span class="dot lg" id="stateDot"></span><div><div class="big-text" id="stateText">…</div><div class="muted" id="stateSub"></div></div></div>
+          <dl class="kv">
+            <div><dt data-i18n="lanAddr">局域网地址</dt><dd id="lanAddr">—</dd></div>
+            <div><dt data-i18n="rtcState">跨网络通道</dt><dd id="rtcState">—</dd></div>
+          </dl>
+        </article>
+
+        <article class="card" id="devicesCard">
+          <div class="card-head"><h2 data-i18n="devicesTitle">已配对设备</h2><span class="muted" id="deviceCount"></span></div>
+          <ul class="devices" id="deviceList"></ul>
+        </article>
+      </div>
+
+      <article class="card pairing" id="pairCard">
+        <div class="card-head"><h2 data-i18n="pairTitle">手机配对</h2></div>
+        <p class="muted center" data-i18n="pairHint">打开手机端 PocketPilot，扫描二维码连接</p>
+        <div class="qr-wrap">
+          <div class="qr" id="qrBox"><img id="qrImg" alt="QR" hidden><div class="qr-empty" id="qrEmpty"></div></div>
+        </div>
+        <div class="countdown"><div class="bar"><span id="barFill"></span></div><div class="muted" id="countdownText"></div></div>
+        <div class="code-label muted" data-i18n="pairCode">配对码</div>
+        <div class="code" id="pairCode">——————</div>
+        <div class="actions">
+          <button class="btn" id="copyLink" data-i18n="copyLink">复制链接</button>
+          <button class="btn primary" id="refreshQr" data-i18n="refreshQr">刷新二维码</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section id="page-settings" class="page" hidden>
+    <div class="settings">
+      <article class="card">
+        <h2 data-i18n="grpGeneral">通用</h2>
+        <div class="row"><div><div class="row-title" data-i18n="autoStart">开机自启</div><div class="muted" data-i18n="autoStartHint">登录 Windows 后自动在托盘中运行</div></div><label class="switch"><input type="checkbox" id="setAutoStart"><span class="track"></span></label></div>
+        <div class="row"><div><div class="row-title" data-i18n="closeToTray">关闭窗口时最小化到托盘</div><div class="muted" data-i18n="closeToTrayHint">服务保持运行，可从托盘退出</div></div><label class="switch"><input type="checkbox" id="setCloseToTray"><span class="track"></span></label></div>
+        <div class="row"><div class="row-title" data-i18n="language">语言</div><select id="setLanguage"><option value="zh">中文</option><option value="en">English</option></select></div>
+      </article>
+
+      <article class="card">
+        <h2 data-i18n="grpNetwork">网络</h2>
+        <div class="row"><div><div class="row-title" data-i18n="port">服务端口</div><div class="muted" data-i18n="portHint">修改后会自动重启服务</div></div><input type="number" id="setPort" min="1024" max="65535"></div>
+        <div class="row"><div><div class="row-title" data-i18n="allowLan">允许局域网访问</div><div class="muted" data-i18n="allowLanHint">同一 Wi-Fi 下的手机可直接连接；关闭后仅本机</div></div><label class="switch"><input type="checkbox" id="setAllowLan"><span class="track"></span></label></div>
+        <div class="row"><div><div class="row-title" data-i18n="allowRtc">允许跨网络（RTC）</div><div class="muted" data-i18n="allowRtcHint">通过加密 WebRTC 通道在外网连接，二维码需要此功能</div></div><label class="switch"><input type="checkbox" id="setAllowRtc"><span class="track"></span></label></div>
+      </article>
+
+      <article class="card">
+        <h2 data-i18n="grpAgent">代理</h2>
+        <div class="row stack"><div class="row-title" data-i18n="workspace">工作目录</div>
+          <div class="inline"><input type="text" id="setWorkspace" spellcheck="false"><button class="btn" id="pickWorkspace" data-i18n="browse">选择…</button><button class="btn primary" id="saveWorkspace" data-i18n="save">保存</button></div></div>
+        <div class="row"><div><div class="row-title" data-i18n="demoMode">演示模式</div><div class="muted" data-i18n="demoModeHint">使用模拟数据，不调用真实命令行代理</div></div><label class="switch"><input type="checkbox" id="setDemo"><span class="track"></span></label></div>
+        <div class="row stack"><div class="row-title" data-i18n="apiKeys">代理密钥</div>
+          <div class="inline"><select id="keyProvider"></select><input type="password" id="keyValue" autocomplete="off" spellcheck="false" placeholder="API key"><button class="btn primary" id="saveKey" data-i18n="save">保存</button><button class="btn" id="clearKey" data-i18n="clear">清除</button></div>
+          <div class="muted" id="keyHint"></div></div>
+      </article>
+
+      <article class="card">
+        <h2 data-i18n="grpAbout">关于</h2>
+        <div class="row"><div class="row-title" data-i18n="version">版本</div><div id="aboutVersion" class="mono"></div></div>
+        <div class="row"><div class="row-title">Electron / Node</div><div id="aboutRuntime" class="mono"></div></div>
+        <div class="row"><div class="row-title" data-i18n="dataDir">数据目录</div><button class="btn" id="openData" data-i18n="open">打开</button></div>
+        <div class="row"><div class="row-title" data-i18n="logs">服务日志</div><button class="btn" id="openLogs" data-i18n="open">打开</button></div>
+        <div class="muted small" data-i18n="aboutText">PocketPilot（口袋领航）让手机成为电脑上编码代理的遥控器。对外连接始终需要配对认证。</div>
+      </article>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

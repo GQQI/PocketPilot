@@ -101,6 +101,11 @@ export class RemoteHost {
     }
   }
 
+  /** Live WebRTC connections and paired-device links being listened on. */
+  stats(): { connections: number; links: number } {
+    return { connections: this.conns.size, links: [...this.subs.values()].filter((sub) => sub.kind === "link").length };
+  }
+
   close(): void {
     clearInterval(this.timer);
     for (const conn of [...this.conns.values()]) this.closeConn(conn);

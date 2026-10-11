@@ -1,6 +1,7 @@
 import { createHub, HubError, resolveInside } from "@pocketpilot/agent-core";
 import { serve } from "@hono/node-server";
 import { getConnInfo } from "@hono/node-server/conninfo";
+import { timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import path from "node:path";
@@ -38,8 +39,27 @@ app.use("*", cors({
   allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
 }));
 
+// Desktop control surface (PocketPilot desktop app only): needs the per-launch internal token, a real loopback socket,
+// no proxy headers and no browser Origin. Requests injected by the WebRTC transport have no socket, so they never pass.
+const internalToken = process.env.POCKETPILOT_INTERNAL_TOKEN ?? "";
+app.use("/api/desktop/*", async (c, next) => {
+  const given = c.req.header("x-pocketpilot-internal") ?? "";
+  const tokenOk = internalToken.length >= 16 && given.length === internalToken.length && timingSafeEqual(Buffer.from(given), Buffer.from(internalToken));
+  let socketOk = false;
+  try {
+    const address = getConnInfo(c).remote.address ?? "";
+    socketOk = address === "127.0.0.1" || address === "::1" || address.endsWith("127.0.0.1");
+  } catch {
+    socketOk = false;
+  }
+  const clean = !c.req.header("origin") && !PROXY_HEADERS.some((name) => c.req.header(name) !== undefined);
+  if (!tokenOk || !socketOk || !clean) return c.json({ error: "desktop control is local only", code: "desktop" }, 403);
+  await next();
+});
+
 app.use("/api/*", async (c, next) => {
   if (c.req.method === "OPTIONS") return next();
+  if (new URL(c.req.url).pathname.startsWith("/api/desktop/")) return next();
   const origin = c.req.header("origin");
   if (origin && !originAllowed(origin) && !sameOrigin(c, origin)) {
     return c.json({ error: "origin not allowed", code: "origin" }, 403);
@@ -80,6 +100,34 @@ app.delete("/api/devices/:id", (c) => c.json(hub.revokeDevice(c.req.param("id"))
 app.post("/api/remote/session", async (c) => {
   if (!remote) return c.json({ error: "remote transport is disabled (start with POCKETPILOT_RTC=1)", code: "rtc-disabled" }, 503);
   return c.json(await remote.createSession(pwaBaseUrl()));
+});
+// ---- desktop control (see guard above) ----
+app.get("/api/desktop/status", (c) => c.json(desktopStatus()));
+app.post("/api/desktop/pairing", async (c) => {
+  const code = hub.pairingCode();
+  if (!remote && process.env.POCKETPILOT_RTC === "1") return c.json({ error: "remote transport is still starting", code: "rtc-starting" }, 503);
+  if (!remote) return c.json({ rtc: false, code, expiresAt: null, url: null, qrSvg: null, lanUrl: pwaBaseUrl() });
+  const session = await remote.createSession(pwaBaseUrl());
+  return c.json({ rtc: true, code, expiresAt: session.expiresAt, url: session.url, qrSvg: session.qrSvg, lanUrl: pwaBaseUrl() });
+});
+app.get("/api/desktop/devices", (c) => c.json(hub.listDevices()));
+app.delete("/api/desktop/devices/:id", (c) => c.json(hub.revokeDevice(c.req.param("id"))));
+app.get("/api/desktop/config", (c) => {
+  const boot = hub.bootstrap();
+  return c.json({
+    workspacePath: boot.settings.workspacePath,
+    demoMode: boot.settings.demoMode,
+    providers: boot.providers.map((p) => ({ id: p.meta.id, name: p.meta.name, keySource: p.keySource })),
+  });
+});
+app.post("/api/desktop/config", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  if (typeof body.workspacePath === "string") hub.updateSettings({ workspacePath: body.workspacePath });
+  if (typeof body.demoMode === "boolean") hub.updateSettings({ demoMode: body.demoMode });
+  if (body.secrets && typeof body.secrets === "object") {
+    for (const [id, key] of Object.entries(body.secrets)) hub.setSecret(id, String(key ?? ""));
+  }
+  return c.json({ ok: true });
 });
 app.get("/api/fs", (c) => c.json(hub.listDirs(c.req.query("path") ?? "")));
 
@@ -151,12 +199,27 @@ serve({ fetch: app.fetch, port, hostname }, () => {
 if (process.env.POCKETPILOT_RTC === "1") {
   void (async () => {
     remote = await startRemote(hub, (request) => app.fetch(request), (message) => console.log(`  [remote] ${message}`));
-    if (!remote) return;
+    if (!remote || process.env.POCKETPILOT_QUIET_PAIRING === "1") return;
     const session = await remote.createSession(pwaBaseUrl());
     console.log("  Scan with the phone camera (expires in 5 min, one use):");
     console.log(await remote.terminalQr(session.url));
     console.log(`  ${session.url}`);
   })();
+}
+
+function desktopStatus() {
+  return {
+    ok: true,
+    pid: process.pid,
+    port,
+    hostname,
+    lan: hostname !== "127.0.0.1" && hostname !== "localhost",
+    urls: phoneUrls(port, Boolean(staticDir)).filter((url) => !url.includes("127.0.0.1")),
+    lanUrl: pwaBaseUrl(),
+    code: hub.pairingCode(),
+    rtc: remote ? { enabled: true, ...remote.stats() } : { enabled: process.env.POCKETPILOT_RTC === "1", mqttConnected: 0, mqttTotal: 0, connections: 0, links: 0 },
+    devices: hub.listDevices(),
+  };
 }
 
 function pwaBaseUrl(): string {
