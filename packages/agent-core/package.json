@@ -1,5 +1,5 @@
 {
-  "name": "@mobileagent/agent-core",
+  "name": "@pocketpilot/agent-core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,10 +7,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@mobileagent/protocol": "0.1.0"
+    "@pocketpilot/protocol": "0.1.0"
   },
   "scripts": {
-    "test": "tsx --test src/hub.test.ts",
+    "test": "tsx --test src/hub.test.ts src/compat.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

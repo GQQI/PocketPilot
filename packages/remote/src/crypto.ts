@@ -1,4 +1,4 @@
-// End-to-end crypto for MobileAgent remote pairing. WebCrypto only (works in browsers and Node >= 20).
+// End-to-end crypto for PocketPilot remote pairing. WebCrypto only (works in browsers and Node >= 20).
 //
 // Key schedule
 //   secret (32 random bytes, from the QR code or a stored link)  ──HKDF──▶ signaling key + MQTT topic

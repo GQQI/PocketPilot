@@ -1,4 +1,4 @@
-import type { ChatMessage, StreamEvent, TerminalEvent } from "@mobileagent/protocol";
+import type { ChatMessage, StreamEvent, TerminalEvent } from "@pocketpilot/protocol";
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
 import { Mark } from "@/components/shell";

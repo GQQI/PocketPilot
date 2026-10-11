@@ -1,4 +1,4 @@
-import type { MessageBlock, StreamEvent } from "@mobileagent/protocol";
+import type { MessageBlock, StreamEvent } from "@pocketpilot/protocol";
 
 export function chunkText(text: string, size = 18): string[] {
   const parts: string[] = [];

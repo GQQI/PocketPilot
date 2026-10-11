@@ -1,4 +1,4 @@
-import type { Bootstrap } from "@mobileagent/protocol";
+import type { Bootstrap } from "@pocketpilot/protocol";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ApiError, api } from "./api";
 import { blurbs, copy, hints, suggestions, type CopyKey } from "./i18n";

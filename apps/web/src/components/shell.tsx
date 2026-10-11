@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button, Input } from "@/components/ui";
 import { useApp } from "@/lib/store";
 import type { CopyKey } from "@/lib/i18n";
+import { PairByLink } from "@/components/remote-pair";
 
 const links: { to: string; key: CopyKey; icon: typeof LayoutGrid }[] = [
   { to: "/", key: "nav.home", icon: LayoutGrid },
@@ -22,7 +23,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="mx-auto flex h-full w-full max-w-[1240px] flex-col md:flex-row">
         <div className="order-1 flex min-h-0 min-w-0 flex-1 flex-col md:order-2">
           <header className="app-header flex items-center justify-between px-4 pb-2 md:px-8">
-            <div className="brand"><span className="brand-logo"><Sparkles size={14} strokeWidth={2.25} /></span>MobileAgent</div>
+            <div className="brand"><span className="brand-logo"><Sparkles size={14} strokeWidth={2.25} /></span>PocketPilot</div>
             {data?.settings.demoMode ? <span className="demo-pill">{locale === "zh" ? "演示" : "Demo"}</span> : <span className="live-pill">{locale === "zh" ? "实时" : "Live"}</span>}
           </header>
           <div className="page-in min-h-0 flex-1">
@@ -43,7 +44,7 @@ export function Shell({ children }: { children: ReactNode }) {
             )}
           </div>
         </div>
-        <nav className="dock order-2 md:order-1" aria-label="MobileAgent">
+        <nav className="dock order-2 md:order-1" aria-label="PocketPilot">
           {links.map((link) => {
             const Icon = link.icon;
             return (
@@ -81,6 +82,7 @@ function PairGate() {
       </div>
       <h1 className="display text-3xl">{t("pair.title")}</h1>
       <p className="mt-3 max-w-md text-sm leading-6 text-mute">{t("pair.help")}</p>
+      <PairByLink />
       <label className="mt-6 block">{t("pair.url")}</label>
       <Input className="mt-2" value={origin} placeholder={t("settings.bridgePh")} onChange={(event) => setOrigin(event.target.value)} />
       <label className="mt-4 block">{t("pair.code")}</label>

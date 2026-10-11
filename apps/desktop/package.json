@@ -1,9 +1,9 @@
 {
-  "name": "@mobileagent/desktop",
+  "name": "@pocketpilot/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "MobileAgent desktop shell",
-  "author": "MobileAgent",
+  "description": "PocketPilot (口袋领航) desktop shell",
+  "author": "PocketPilot",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",

@@ -1,4 +1,4 @@
-import type { HostView, ProviderConfig, ProviderView } from "@mobileagent/protocol";
+import type { HostView, ProviderConfig, ProviderView } from "@pocketpilot/protocol";
 import { useEffect, useState } from "react";
 import { RemotePairPanel } from "@/components/remote-pair";
 import { DevicesPanel } from "@/components/devices-panel";

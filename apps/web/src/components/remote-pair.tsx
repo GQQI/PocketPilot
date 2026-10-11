@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import jsQR from "jsqr";
 import { useEffect, useRef, useState } from "react";
 import { Button, Input } from "@/components/ui";
@@ -47,14 +48,42 @@ export function PairLanding({ payload }: { payload: string }) {
   );
 }
 
-function Scanner({ onResult, onClose }: { onResult: (text: string) => void; onClose: () => void }) {
+/**
+ * Native app only: Google ML Kit code scanner (full-screen camera UI, no CAMERA permission prompt of our own).
+ * Resolves true when it handled the scan (result or user cancel); false means "not available, use the web camera".
+ */
+async function nativeScan(onResult: (text: string) => void, onClose: () => void): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const { BarcodeScanner, BarcodeFormat } = await import("@capacitor-mlkit/barcode-scanning");
+    if (!(await BarcodeScanner.isSupported()).supported) return false;
+    if (!(await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()).available) return false;
+    const { barcodes } = await BarcodeScanner.scan({ formats: [BarcodeFormat.QrCode] });
+    const text = barcodes.map((item) => item.rawValue).find((value) => parsePairPayload(value)) ?? barcodes[0]?.rawValue;
+    if (text) onResult(text);
+    else onClose();
+    return true;
+  } catch (caught) {
+    if (/cancel/i.test(caught instanceof Error ? caught.message : String(caught))) {
+      onClose();
+      return true;
+    }
+    return false;
+  }
+}
+
+export function Scanner({ onResult, onClose }: { onResult: (text: string) => void; onClose: () => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState("");
+  const callbacks = useRef({ onResult, onClose });
+  callbacks.current = { onResult, onClose };
   useEffect(() => {
     let stop = false;
     let stream: MediaStream | undefined;
     const canvas = document.createElement("canvas");
     async function start() {
+      if (await nativeScan((text) => callbacks.current.onResult(text), () => callbacks.current.onClose())) return;
+      if (stop) return;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         const el = video.current;
@@ -71,7 +100,7 @@ function Scanner({ onResult, onClose }: { onResult: (text: string) => void; onCl
             const image = ctx?.getImageData(0, 0, canvas.width, canvas.height);
             const code = image ? jsQR(image.data, image.width, image.height) : null;
             if (code && parsePairPayload(code.data)) {
-              onResult(code.data);
+              callbacks.current.onResult(code.data);
               return;
             }
           }
@@ -87,7 +116,7 @@ function Scanner({ onResult, onClose }: { onResult: (text: string) => void; onCl
       stop = true;
       stream?.getTracks().forEach((track) => track.stop());
     };
-  }, [onResult]);
+  }, []);
   return (
     <div className="mt-3">
       <video ref={video} className="w-full rounded-2xl bg-black" playsInline muted />
@@ -159,5 +188,44 @@ export function RemotePairPanel() {
       {busy ? <p className="mt-2 text-sm">{t("remote.pairing")}</p> : null}
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
     </section>
+  );
+}
+/** Pairing by QR scan or pasted link (works in the browser and in the Capacitor app). Used on the unpaired screen. */
+export function PairByLink() {
+  const { t, setNotice } = useApp();
+  const [scanning, setScanning] = useState(false);
+  const [paste, setPaste] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  function pairWith(text: string) {
+    const payload = parsePairPayload(text);
+    if (!payload) {
+      setNotice(t("remote.invalid"));
+      return;
+    }
+    setScanning(false);
+    setBusy(true);
+    setError("");
+    pairFromPayload(payload, api.deviceName()).then((token) => {
+      api.adoptToken(token);
+      window.location.replace("/");
+    }).catch((caught: unknown) => {
+      setError(caught instanceof Error ? caught.message : String(caught));
+      setBusy(false);
+    });
+  }
+
+  return (
+    <div data-testid="pair-by-link">
+      <Button className="mt-6 w-full" variant="soft" disabled={busy} onClick={() => setScanning((value) => !value)}>{t("remote.scan")}</Button>
+      {scanning ? <Scanner onResult={pairWith} onClose={() => setScanning(false)} /> : null}
+      <div className="mt-3 flex gap-2">
+        <Input value={paste} placeholder={t("remote.paste")} onChange={(event) => setPaste(event.target.value)} />
+        <Button size="sm" variant="soft" disabled={!paste.trim() || busy} onClick={() => pairWith(paste)}>{t("remote.pasteBtn")}</Button>
+      </div>
+      {busy ? <p className="mt-2 text-sm">{t("remote.pairing")}</p> : null}
+      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+    </div>
   );
 }

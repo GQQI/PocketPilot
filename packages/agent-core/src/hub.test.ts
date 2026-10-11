@@ -8,7 +8,7 @@ import { createHub } from "./hub";
 import { resolveInside } from "./paths";
 
 test("demo hub covers CloudCLI agents plus DeepSeek Harness", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "mobileagent-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "pocketpilot-"));
   try {
     const hub = createHub({ dataDir: dir, fast: true });
     const boot = hub.bootstrap();
@@ -41,7 +41,7 @@ test("demo hub covers CloudCLI agents plus DeepSeek Harness", async () => {
     const reloaded = createHub({ dataDir: dir, fast: true });
     assert.equal(reloaded.bootstrap().settings.theme, "dark");
     reloaded.updateSettings({ theme: "light", activeProviderId: "cursor", demoMode: false, workspacePath: dir, providers: {
-      cursor: { enabled: true, model: "auto", cliPath: "mobileagent-missing-cli", endpoint: "" },
+      cursor: { enabled: true, model: "auto", cliPath: "pocketpilot-missing-cli", endpoint: "" },
     } });
     await mkdir(path.join(dir, "src"), { recursive: true });
     await writeFile(path.join(dir, "secrets.json"), "hidden");
@@ -57,7 +57,7 @@ test("demo hub covers CloudCLI agents plus DeepSeek Harness", async () => {
     }
     assert.equal(liveEvents.some((event) => event.type === "error"), true);
     const liveTranscript = reloaded.messages(created.session.id);
-    assert.match(liveTranscript.at(-1)?.blocks.find((block) => block.type === "text" && block.text.includes("mobileagent-missing-cli"))?.type ?? "", /text/);
+    assert.match(liveTranscript.at(-1)?.blocks.find((block) => block.type === "text" && block.text.includes("pocketpilot-missing-cli"))?.type ?? "", /text/);
 
     const harness = boot.providers.find((provider) => provider.meta.id === "deepseek-harness");
     assert.ok(harness);
@@ -96,7 +96,7 @@ test("demo hub covers CloudCLI agents plus DeepSeek Harness", async () => {
 });
 
 function tmpHub(options: Parameters<typeof createHub>[0] = {}) {
-  return mkdtemp(path.join(tmpdir(), "mobileagent-sec-")).then((dir) => ({ dir, hub: createHub({ dataDir: dir, fast: true, ...options }) }));
+  return mkdtemp(path.join(tmpdir(), "pocketpilot-sec-")).then((dir) => ({ dir, hub: createHub({ dataDir: dir, fast: true, ...options }) }));
 }
 
 test("pairing issues per-device tokens that can be revoked", async () => {

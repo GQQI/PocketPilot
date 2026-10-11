@@ -35,7 +35,7 @@ test("ECDH session keys agree, are directional, and reject replay", async () => 
 
 // node-datachannel (libjuice) on Windows cannot connect two peers living in the SAME process (ICE stays "checking"
 // even on 127.0.0.1); the same pair connects instantly across two processes. Use scripts/e2e-remote.mjs there.
-test("QR pairing then link reconnect over WebRTC data channel", { timeout: 60_000, skip: process.platform === "win32" && process.env.MOBILEAGENT_FORCE_INPROC !== "1" ? "in-process dual WebRTC peers unsupported on Windows (see scripts/e2e-remote.mjs)" : false }, async () => {
+test("QR pairing then link reconnect over WebRTC data channel", { timeout: 60_000, skip: process.platform === "win32" && (process.env.POCKETPILOT_FORCE_INPROC ?? process.env.MOBILEAGENT_FORCE_INPROC) !== "1" ? "in-process dual WebRTC peers unsupported on Windows (see scripts/e2e-remote.mjs)" : false }, async () => {
   const bus = new MemoryBus();
   let granted: { token: string; deviceId: string; linkSecret: string } | undefined;
   const host = new RemoteHost({

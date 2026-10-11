@@ -1,5 +1,5 @@
 {
-  "name": "@mobileagent/bridge",
+  "name": "@pocketpilot/bridge",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.6",
-    "@mobileagent/agent-core": "0.1.0",
-    "@mobileagent/remote": "0.1.0",
+    "@pocketpilot/agent-core": "0.1.0",
+    "@pocketpilot/remote": "0.1.0",
     "hono": "^4.10.3",
     "node-datachannel": "^0.33.4",
     "qrcode": "^1.5.4"

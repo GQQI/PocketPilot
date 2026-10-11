@@ -18,7 +18,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@mobileagent/protocol": ["../../packages/protocol/src/index.ts"]
+      "@pocketpilot/protocol": ["../../packages/protocol/src/index.ts"]
     },
 
     /* Linting */

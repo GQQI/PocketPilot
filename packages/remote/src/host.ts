@@ -277,7 +277,7 @@ export class RemoteHost {
       }
       // Marks the request as coming from a tunnel: no socket (never loopback), per-peer rate-limit key, never trusted.
       headers.set("host", "rtc.local");
-      headers.set("x-mobileagent-peer", conn.cid);
+      headers.set("x-pocketpilot-peer", conn.cid);
       const method = frame.method.toUpperCase();
       const request = new Request(`http://rtc.local${frame.path}`, {
         method,

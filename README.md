@@ -1,10 +1,10 @@
-# MobileAgent
+# PocketPilot
 
 手机优先的多代理控制台。手机负责挑选和下指令；Cursor CLI、Claude Code、Codex、OpenCode、Gemini CLI 和 DeepSeek Harness 都跑在你的电脑上。输出再流回手机。
 
 界面偏留白，浅色为默认，设置里可以换成深色。底部导航给手机用，宽屏会变成左侧导航。它不是 CloudCLI / Claude Code UI 的皮肤，也不包含那份代码。
 
-VS Code 不是这里的代理平台。编辑器只是你自己的工具；MobileAgent 连接的是代理 CLI。
+VS Code 不是这里的代理平台。编辑器只是你自己的工具；PocketPilot 连接的是代理 CLI。
 
 ## 代理
 
@@ -52,14 +52,14 @@ flowchart LR
 
 在手机上：选择代理，再用目录选择器挑电脑上的项目目录，然后发送消息。宿主把这段文字交给当前适配器，并把标准输出流式推回会话。六条内置线路走同一条路径。换代理只换适配器，不换手机上的操作。
 
-密钥不会进仓库。环境变量优先；否则写到电脑上的 `~/.mobileagent/secrets.json`（权限 `0600`）。连接设置和浅色/深色偏好在 `~/.mobileagent/settings.json`，不含密钥。配对码在 `~/.mobileagent/host.json`。
+密钥不会进仓库。环境变量优先；否则写到电脑上的 `~/.pocketpilot/secrets.json`（权限 `0600`）。连接设置和浅色/深色偏好在 `~/.pocketpilot/settings.json`，不含密钥。配对码在 `~/.pocketpilot/host.json`。
 
 ## 在 Windows 上让手机连上电脑
 
-把仓库放到 `D:\Project\MobileAgent`，目录就是仓库根目录。
+把仓库放到 `D:\Project\AgentFrame`，目录就是仓库根目录。
 
 ```powershell
-cd D:\Project\MobileAgent
+cd D:\Project\PocketPilot
 npm install
 npm run host
 ```
@@ -134,7 +134,7 @@ npm start
 npx @deepseek-ai/dsh web
 ```
 
-上面这条会打开 Harness 自己的 Web UI。MobileAgent 在实时模式调用的是一轮任务：
+上面这条会打开 Harness 自己的 Web UI。PocketPilot 在实时模式调用的是一轮任务：
 
 ```bash
 dsh --profile headless "任务内容"
@@ -157,7 +157,7 @@ npm start
 
 ### Windows 安装包
 
-在 Windows 上，于 `D:\Project\MobileAgent`：
+在 Windows 上，于 `D:\Project\PocketPilot`：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
@@ -170,7 +170,7 @@ npm install
 npm run desktop:dist:win
 ```
 
-安装包在 `apps\desktop\release\MobileAgent-Setup-*.exe`（NSIS，可选安装目录）。Electron 会拉起桥接再打开窗口。签名默认关闭，方便在没有证书的机器上打包。
+安装包在 `apps\desktop\release\PocketPilot-Setup-*.exe`（NSIS，可选安装目录）。Electron 会拉起桥接再打开窗口。签名默认关闭，方便在没有证书的机器上打包。
 
 当前这台 Linux 环境可以先打未打包目录：
 
@@ -213,7 +213,7 @@ npm run screenshots
 
 ---
 
-# MobileAgent (English)
+# PocketPilot (English)
 
 Mobile-first control panel for coding-agent CLIs. The phone picks an agent and a folder, then forwards prompts. Cursor CLI, Claude Code, Codex, OpenCode, Gemini CLI, and DeepSeek Harness all run on the PC. Their output streams back to the phone.
 
@@ -242,14 +242,14 @@ The phone does not install the CLIs. A host (`apps/bridge`) runs on the PC. The 
 
 The phone chooses an agent, picks a project directory on that PC, and sends a message. The host hands the text to the current adapter and streams stdout back into the session. All six built-in agents share that path. Switching agents swaps the adapter, not the phone flow.
 
-Keys never go into git. Environment variables win; otherwise they are stored on the PC in `~/.mobileagent/secrets.json` with mode `0600`. Connection settings and the theme live in `~/.mobileagent/settings.json`. The pairing code lives in `~/.mobileagent/host.json`.
+Keys never go into git. Environment variables win; otherwise they are stored on the PC in `~/.pocketpilot/secrets.json` with mode `0600`. Connection settings and the theme live in `~/.pocketpilot/settings.json`. The pairing code lives in `~/.pocketpilot/host.json`.
 
 ## Run the host on Windows so a phone can connect
 
-Put the repo at `D:\Project\MobileAgent`. The repository root is the app root.
+Put the repo at `D:\Project\PocketPilot`. The repository root is the app root.
 
 ```powershell
-cd D:\Project\MobileAgent
+cd D:\Project\PocketPilot
 npm install
 npm run host
 ```
@@ -294,7 +294,7 @@ Turn demo mode off, pick a folder on the computer, and adjust the command if it 
 - **Codex** — <https://developers.openai.com/codex>. `codex exec --skip-git-repo-check`. Optional `OPENAI_API_KEY`.
 - **OpenCode** — <https://opencode.ai>. `opencode run`.
 - **Gemini CLI** — <https://github.com/google-gemini/gemini-cli>. `gemini -p -m`. `GEMINI_API_KEY`, then `GOOGLE_API_KEY`.
-- **DeepSeek Harness** — <https://github.com/deepseek-ai/deepseek-harness>. Their own UI is `npx @deepseek-ai/dsh web`. MobileAgent calls `dsh --profile headless "<task>"`. Set `DEEPSEEK_API_KEY`. A non-empty endpoint is passed as `DEEPSEEK_BASE_URL`. Home defaults to `~/.dsh` (`DSH_HOME`).
+- **DeepSeek Harness** — <https://github.com/deepseek-ai/deepseek-harness>. Their own UI is `npx @deepseek-ai/dsh web`. PocketPilot calls `dsh --profile headless "<task>"`. Set `DEEPSEEK_API_KEY`. A non-empty endpoint is passed as `DEEPSEEK_BASE_URL`. Home defaults to `~/.dsh` (`DSH_HOME`).
 
 On Windows, if the CLI is a `.cmd` shim, paste the full path into the command field.
 
@@ -302,7 +302,7 @@ On Windows, if the CLI is a `.cmd` shim, paste the full path into the command fi
 
 PWA: `npm run build && npm start`, then use the browser's install action on the phone or the PC. The manifest is emitted by the production build.
 
-Windows installer, from `D:\Project\MobileAgent`:
+Windows installer, from `D:\Project\PocketPilot`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
@@ -322,3 +322,17 @@ npm run screenshots
 Files land in `artifacts/` (`home_simplified.png`, `agent_picker.png`, `remote_directory.png`, `chat_live_output.png`, `settings_theme.png`). `npm run dev` must already be running.
 
 本仓库为 AgentFrame。
+
+## Android 应用（APK）
+
+`apps/android` 是 Capacitor 工程，APK 内置完整的 Web 界面（离线可用，不依赖电脑托管网页），支持相机扫码配对。
+
+```powershell
+npm run android:debug   # 输出 dist-android\PocketPilot-debug.apk（需要 JDK 17 + Android SDK，详见使用指南）
+```
+
+完整的启动、配对、安装、撤销设备说明见 [docs/使用指南.md](docs/使用指南.md)。
+
+## 改名说明
+
+产品原名 MobileAgent，现为 **PocketPilot（口袋领航）**。环境变量 `MOBILEAGENT_*` 仍可使用（等同 `POCKETPILOT_*`）；首次启动时旧目录 `~/.mobileagent` 会被复制到 `~/.pocketpilot`，浏览器里的 `mobileagent.*` 本地存储键会自动迁移到 `pocketpilot.*`，已配对数据不受影响。

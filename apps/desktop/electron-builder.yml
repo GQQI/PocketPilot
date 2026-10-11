@@ -1,5 +1,5 @@
-appId: app.mobileagent.desktop
-productName: MobileAgent
+appId: com.pocketpilot.desktop
+productName: PocketPilot
 directories:
   output: release
 files:
@@ -18,7 +18,7 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  artifactName: MobileAgent-Setup-${version}.${ext}
+  artifactName: PocketPilot-Setup-${version}.${ext}
 linux:
   target:
     - dir

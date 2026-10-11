@@ -1,4 +1,4 @@
-import type { FileContent, FileEntry } from "@mobileagent/protocol";
+import type { FileContent, FileEntry } from "@pocketpilot/protocol";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { Button, Input, EmptyState } from "@/components/ui";
