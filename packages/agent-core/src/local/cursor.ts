@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent } from "@pocketpilot/protocol";
 import { baseName, cap, FileCache, prettyError, fileUriToPath, findExecutable, home, isDir, listDir, normPath, oneLine, readLines, resolveSlug, runCapture, runStream, safeStat, slugify, startOfToday, tryJson } from "./util";
-import { emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
+import { dailyTotals, emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 /**
  * Cursor.
@@ -120,7 +120,7 @@ function cliCandidates(): { names: string[]; dirs: string[] } {
   const local = process.env.LOCALAPPDATA ?? path.join(home(), "AppData", "Local");
   return {
     names: ["cursor-agent", "agent"],
-    dirs: [path.join(local, "cursor-agent"), path.join(local, "Programs", "cursor-agent"), path.join(home(), ".local", "bin"), path.join(home(), ".cursor", "bin")],
+    dirs: [path.join(local, "cursor-agent"), path.join(local, "cursor-agent", "bin"), path.join(local, "Programs", "cursor-agent"), path.join(home(), ".local", "bin"), path.join(home(), ".cursor", "bin"), "/usr/local/bin", "/opt/homebrew/bin"],
   };
 }
 
@@ -136,6 +136,36 @@ async function locateCli(ctx: AgentCtx): Promise<{ cliPath: string | null; versi
   return { cliPath: found, version: out ? cap(out, 80) : null };
 }
 
+const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "");
+let loginCache: { key: string; at: number; value: { ok: boolean; email: string; text: string } } | null = null;
+
+/** `cursor-agent status` decides login from local tokens: "Logged in as x@y" / "Logged in" / "Not logged in". */
+async function loginStatus(cli: string, ctx: AgentCtx): Promise<{ ok: boolean; email: string; text: string }> {
+  if (loginCache && loginCache.key === cli && Date.now() - loginCache.at < 60_000) return loginCache.value;
+  const r = await runCapture(cli, ["status"], { env: ctx.env, timeoutMs: 20_000 });
+  const out = stripAnsi(`${r.stdout}\n${r.stderr}`);
+  const email = /Logged in as\s+([^\s@]+@[^\s]+)/i.exec(out)?.[1] ?? "";
+  const ok = r.code === 0 && /Logged in/i.test(out) && !/not logged in/i.test(out);
+  const value = { ok, email, text: oneLine(out, 120) };
+  loginCache = { key: cli, at: Date.now(), value };
+  return value;
+}
+
+let modelCache: { key: string; at: number; value: string[] } | null = null;
+
+/** `cursor-agent --list-models` prints "<id> - <Name>" per line. */
+async function listModels(cli: string, ctx: AgentCtx): Promise<string[]> {
+  if (modelCache && modelCache.key === cli && Date.now() - modelCache.at < 600_000) return modelCache.value;
+  const r = await runCapture(cli, ["--list-models"], { env: ctx.env, timeoutMs: 20_000 });
+  const ids: string[] = [];
+  for (const raw of stripAnsi(r.stdout).split(/\r?\n/)) {
+    const m = /^\s*([A-Za-z0-9][A-Za-z0-9._:-]*)\s+-\s+/.exec(raw);
+    if (m && !ids.includes(m[1])) ids.push(m[1]);
+  }
+  modelCache = { key: cli, at: Date.now(), value: ids };
+  return ids;
+}
+
 export const cursorAgent: LocalAgent = {
   id: "cursor",
   history: true,
@@ -144,16 +174,20 @@ export const cursorAgent: LocalAgent = {
     const cli = await locateCli(ctx);
     const hasHistory = listTranscripts().length > 0 || readOur(ctx.dataDir).length > 0;
     const hasKey = ctx.keySource !== "none";
-    return {
-      ...cli,
-      hasHistory,
-      dataPath: root(),
-      auth: hasKey
+    let auth: Detection["auth"];
+    let models: string[] = [];
+    if (cli.cliPath) {
+      const login = await loginStatus(cli.cliPath, ctx).catch(() => null);
+      models = login?.ok || hasKey ? await listModels(cli.cliPath, ctx).catch(() => []) : [];
+      if (login?.ok) auth = { state: "ok", source: "cli", note: login.email ? `cursor-agent: ${login.email}` : "cursor-agent status: Logged in" };
+      else if (hasKey) auth = { state: "ok", source: ctx.keySource, note: "CURSOR_API_KEY" };
+      else auth = { state: "missing", source: "cli", note: ctx.locale === "en" ? "Not signed in. Run `cursor-agent login` on the PC, or save a CURSOR_API_KEY below." : "尚未登录：请在电脑上运行 cursor-agent login，或在下方保存 CURSOR_API_KEY。" };
+    } else {
+      auth = hasKey
         ? { state: "ok", source: ctx.keySource, note: "CURSOR_API_KEY" }
-        : cli.cliPath
-          ? { state: "unknown", source: "cli", note: "登录状态由 cursor-agent 自己保存；未登录时发送会返回登录提示" }
-          : { state: "missing", source: "none", note: "未找到 cursor-agent，也没有配置 CURSOR_API_KEY" },
-    };
+        : { state: "missing", source: "none", note: ctx.locale === "en" ? "cursor-agent not found and no CURSOR_API_KEY" : "未找到 cursor-agent，也没有配置 CURSOR_API_KEY" };
+    }
+    return { ...cli, hasHistory, dataPath: root(), auth, models };
   },
 
   async sessions(ctx): Promise<AgentSession[]> {
@@ -220,7 +254,7 @@ export const cursorAgent: LocalAgent = {
   },
 
   async *chat(req: AgentChatRequest, cli: string, ctx: AgentCtx, signal: AbortSignal): AsyncGenerator<StreamEvent> {
-    const args = ["-p", "--output-format", "stream-json", "--force"];
+    const args = ["-p", "--output-format", "stream-json", "--force", "--trust"];
     if (req.sessionId) args.push("--resume", req.sessionId);
     if (req.model && req.model !== "auto") args.push("--model", req.model);
     args.push(req.prompt);
@@ -267,11 +301,13 @@ export const cursorAgent: LocalAgent = {
     // which PocketPilot does not read. What exists locally is the number of chats/prompts, bucketed by transcript mtime.
     const today = emptyBucket(), week = emptyBucket(), month = emptyBucket();
     const t0 = startOfToday();
+    const daily = dailyTotals();
     for (const t of listTranscripts()) {
       const m = safeStat(t.file)?.mtimeMs ?? 0;
       if (m < t0 - 29 * 86400000) continue;
       let users = 0;
       for await (const line of readLines(t.file)) if (line.startsWith('{"role":"user"')) users++;
+      daily.add(m, 0, users, null);
       for (const [b, from] of [[today, t0], [week, t0 - 6 * 86400000], [month, t0 - 29 * 86400000]] as const) if (m >= from) b.requests += users;
     }
     void ctx;
@@ -282,6 +318,7 @@ export const cursorAgent: LocalAgent = {
       hasTokens: false,
       today, week, month,
       costEstimated: false,
+      daily: daily.list(),
       models: [],
       note: "Cursor 不在本地记录 token 和费用；账户额度只能在 cursor.com 登录后查看。这里的“请求数”是本地对话里的提问数，按对话文件最后修改日期归档，仅供参考。",
       computedAt: new Date().toISOString(),

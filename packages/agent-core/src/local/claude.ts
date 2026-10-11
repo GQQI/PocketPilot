@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent, UsageBucket } from "@pocketpilot/protocol";
 import { baseName, cap, exists, prettyError, FileCache, findExecutable, globDirs, home, listDir, oneLine, readLines, runCapture, runStream, safeStat, startOfToday, tryJson } from "./util";
-import { emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
+import { dailyTotals, emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 /**
  * Claude Code.
@@ -228,6 +228,7 @@ export const claudeAgent: LocalAgent = {
     let unpriced = false;
     let priced = false;
     const seen = new Set<string>();
+    const daily = dailyTotals();
     for (const f of files()) {
       if (f.mtime < t0 - 29 * 86400000) continue;
       for await (const line of readLines(f.file)) {
@@ -248,6 +249,7 @@ export const claudeAgent: LocalAgent = {
         const price = priceFor(msg.model);
         const cost = price ? (inTok * price.in + outTok * price.out + (u.cache_read_input_tokens ?? 0) * price.in * 0.1 + (u.cache_creation_input_tokens ?? 0) * price.in * 1.25) / 1e6 : null;
         if (cost === null) unpriced = true; else priced = true;
+        daily.add(ts, inTok + outTok, 1, cost);
         for (const [b, from] of [[today, t0], [week, t0 - 6 * 86400000], [month, t0 - 29 * 86400000]] as [UsageBucket, number][]) {
           if (ts < from) continue;
           b.inputTokens += inTok; b.outputTokens += outTok; b.cacheTokens += cache; b.requests += 1;
@@ -262,6 +264,7 @@ export const claudeAgent: LocalAgent = {
       hasTokens: true,
       today, week, month,
       costEstimated: priced,
+      daily: daily.list(),
       models: [...models],
       note: priced
         ? `费用按公开单价估算${unpriced ? "，未知模型（如自定义网关的模型）没有计价" : ""}，不等于账单。`
