@@ -23,7 +23,7 @@ import type {
   TerminalEvent,
 } from "@pocketpilot/protocol";
 import { listDemoDirectory, listHostDirectory } from "./browse";
-import { CATALOG, type CatalogEntry } from "./catalog";
+import { CATALOG, LOCAL_ONLY, type CatalogEntry } from "./catalog";
 import { DemoEngine } from "./demo-engine";
 import { HubError } from "./errors";
 import { applyLegacyEnv, resolveDefaultDataDir } from "./compat";
@@ -530,7 +530,7 @@ export class Hub {
   }
 
   private metas(): ProviderMeta[] {
-    return [...CATALOG, ...extras.map((adapter) => adapter.meta)];
+    return [...CATALOG, ...LOCAL_ONLY, ...extras.map((adapter) => adapter.meta)];
   }
 
   private requireMeta(id: string): ProviderMeta {

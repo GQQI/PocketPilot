@@ -1,40 +1,12 @@
-import { ArrowLeft, ArrowUp, Plus, Square } from "lucide-react";
+import { ArrowLeft, ArrowUp, Square } from "lucide-react";
 import type { ChatMessage, MessageBlock, StreamEvent } from "@pocketpilot/protocol";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { AgentPicker } from "@/components/agent-picker";
 import { RichText } from "@/components/rich-text";
 import { Button, EmptyState } from "@/components/ui";
+import { notifyTask } from "@/lib/notify";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/store";
-import { SessionRow, useSessions } from "./home";
-
-/** "会话" tab: real chat history of the selected platform. */
-export function ChatIndex() {
-  const { agent, t } = useApp();
-  const navigate = useNavigate();
-  const [limit, setLimit] = useState(40);
-  const [query, setQuery] = useState("");
-  const { rows } = useSessions(agent?.id, undefined, limit);
-  if (!agent) return <div className="px-4 pt-8 text-mute md:px-8">{t("a.none")}</div>;
-  const shown = (rows ?? []).filter((s) => !query.trim() || `${s.title} ${s.projectName}`.toLowerCase().includes(query.trim().toLowerCase()));
-  return (
-    <div className="app-scroll h-full overflow-y-auto px-4 pb-8 md:px-8" data-testid="sessions">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="display !p-0 text-3xl">{t("nav.chat")}</h1>
-        <Button size="sm" disabled={!agent.available} onClick={() => navigate("/projects")}><Plus size={16} />{t("a.newChat")}</Button>
-      </div>
-      <div className="mt-3"><AgentPicker /></div>
-      <input className="input mt-3" value={query} placeholder={t("a.search")} onChange={(event) => setQuery(event.target.value)} />
-      <div className="mt-3 space-y-2">
-        {rows === null ? <p className="text-sm text-mute">{t("common.loading")}</p> : null}
-        {rows && shown.length === 0 ? <EmptyState text={agent.canListSessions ? t("a.recentEmpty") : t("set.noUsage")} /> : null}
-        {shown.map((session) => <SessionRow key={session.id} session={session} onOpen={() => navigate(`/chat/${agent.id}/${session.id}`)} />)}
-      </div>
-      {rows && rows.length >= limit ? <Button className="mt-4 w-full" variant="soft" onClick={() => setLimit(limit + 40)}>{t("a.more")}</Button> : null}
-    </div>
-  );
-}
 
 type UiMessage = ChatMessage & { error?: boolean };
 
@@ -59,6 +31,7 @@ export function ChatPage() {
   const area = useRef<HTMLTextAreaElement>(null);
   const stick = useRef(true);
   const streaming = useRef(false);
+  const outcome = useRef({ text: "", error: "" });
 
   // existing session: load real history + find its project
   useEffect(() => {
@@ -104,6 +77,7 @@ export function ChatPage() {
       setSessionId(event.id);
       window.history.replaceState(null, "", `/chat/${agentId}/${event.id}`);
     } else if (event.type === "text") {
+      outcome.current.text += event.delta;
       setStatus("");
       patchLast((blocks) => {
         const last = blocks[blocks.length - 1];
@@ -125,6 +99,7 @@ export function ChatPage() {
         return [...blocks, { type: "tool", name: event.name, detail: event.detail, status: event.phase === "done" ? "done" : "running" }];
       });
     } else if (event.type === "error") {
+      outcome.current.error = event.message;
       setMessages((rows) => {
         const last = rows[rows.length - 1];
         const rest = last && last.role === "assistant" && last.blocks.length === 0 ? rows.slice(0, -1) : rows;
@@ -151,6 +126,7 @@ export function ChatPage() {
     abortRef.current = controller;
     streaming.current = true;
     setRunning(true);
+    outcome.current = { text: "", error: "" };
     try {
       await api.agentChat(agent.id, { sessionId: sessionId || undefined, cwd, prompt: text }, onEvent, controller.signal);
     } catch (caught) {
@@ -158,7 +134,14 @@ export function ChatPage() {
     } finally {
       setRunning(false);
       setStatus("");
+      const aborted = controller.signal.aborted;
       abortRef.current = null;
+      if (!aborted) {
+        const proj = cwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
+        const failed = Boolean(outcome.current.error);
+        const summary = (failed ? outcome.current.error : outcome.current.text).replace(/\s+/g, " ").trim().slice(0, 120);
+        void notifyTask({ title: `${agent.name}${proj ? ` · ${proj}` : ""}`, body: summary || (failed ? t("s.n.failed") : t("s.n.done")), kind: failed ? "error" : "done" });
+      }
       setMessages((rows) => rows.filter((row, i) => !(i === rows.length - 1 && row.role === "assistant" && row.blocks.length === 0)));
     }
   }

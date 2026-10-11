@@ -1,16 +1,19 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AgentProject, AgentsOverview, AgentStatus, AgentUsage, ChatMessage, StreamEvent, AgentChatRequest, AgentSession } from "@pocketpilot/protocol";
-import { CATALOG } from "../catalog";
+import { CATALOG as BUILTIN, LOCAL_ONLY } from "../catalog";
+import type { ProviderMeta } from "@pocketpilot/protocol";
 import { HubError } from "../errors";
 import { claudeAgent } from "./claude";
 import { codexAgent } from "./codex";
 import { cursorAgent } from "./cursor";
 import { cliOnlyAgents } from "./others";
+import { grokAgent, traeAgent } from "./more";
 import type { AgentCtx, LocalAgent } from "./types";
 import { baseName, normPath, isDir } from "./util";
 
-const AGENTS: LocalAgent[] = [cursorAgent, claudeAgent, codexAgent, ...cliOnlyAgents];
+const CATALOG: ProviderMeta[] = [...BUILTIN, ...LOCAL_ONLY];
+const AGENTS: LocalAgent[] = [cursorAgent, claudeAgent, codexAgent, ...cliOnlyAgents, traeAgent, grokAgent];
 
 const INSTALL: Record<string, { win: string; unix: string }> = {
   cursor: { win: "irm 'https://cursor.com/install?win32=true' | iex", unix: "curl https://cursor.com/install -fsS | bash" },
@@ -18,6 +21,7 @@ const INSTALL: Record<string, { win: string; unix: string }> = {
   codex: { win: "npm install -g @openai/codex", unix: "npm install -g @openai/codex" },
   gemini: { win: "npm install -g @google/gemini-cli", unix: "npm install -g @google/gemini-cli" },
   opencode: { win: "npm install -g opencode-ai", unix: "npm install -g opencode-ai" },
+  grok: { win: "irm https://x.ai/cli/install.ps1 | iex", unix: "curl -fsSL https://x.ai/cli/install.sh | bash" },
 };
 
 export type CtxFactory = (id: string) => AgentCtx;

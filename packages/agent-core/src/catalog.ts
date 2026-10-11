@@ -122,3 +122,33 @@ export function launchArgs(id: string, model: string, prompt: string): string[] 
       return [prompt];
   }
 }
+
+/** Platforms that only have a real-data adapter (no demo/seed data). */
+export const LOCAL_ONLY: ProviderMeta[] = [
+  {
+    id: "trae-cn",
+    name: "Trae CN",
+    vendor: "ByteDance",
+    cli: "traex",
+    defaultModel: "",
+    models: [],
+    endpoint: "",
+    envKeys: [],
+    docsUrl: "https://docs.trae.cn/cli",
+    accent: "#2a9d6f",
+    monogram: "Tr",
+  },
+  {
+    id: "grok",
+    name: "Grok",
+    vendor: "xAI",
+    cli: "grok",
+    defaultModel: "grok-4",
+    models: ["grok-4"],
+    endpoint: "",
+    envKeys: ["XAI_API_KEY"],
+    docsUrl: "https://docs.x.ai/build/overview",
+    accent: "#222831",
+    monogram: "Gk",
+  },
+];

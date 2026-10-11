@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent } from "@pocketpilot/protocol";
-import { baseName, cap, FileCache, prettyError, fileUriToPath, findExecutable, home, isDir, listDir, normPath, oneLine, readLines, resolveSlug, runCapture, runStream, safeStat, slugify, startOfToday, tryJson } from "./util";
+import { baseName, cap, exists, FileCache, prettyError, fileUriToPath, findExecutable, home, isDir, listDir, normPath, oneLine, readLines, resolveSlug, runCapture, runStream, safeStat, slugify, startOfToday, tryJson } from "./util";
 import { dailyTotals, emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 /**
@@ -333,6 +333,7 @@ function toolBlock(b: Record<string, unknown>): MessageBlock {
 }
 
 function recordOur(dataDir: string, id: string, req: AgentChatRequest, answer: string): void {
+  if (exists(path.join(dataDir, "no-history"))) return;
   try {
     const list = readOur(dataDir);
     const now = new Date().toISOString();
