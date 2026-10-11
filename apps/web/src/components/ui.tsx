@@ -3,21 +3,22 @@ import * as Switch from "@radix-ui/react-switch";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
+import { Inbox, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-full font-medium transition disabled:opacity-40",
+  "btn inline-flex items-center justify-center gap-2 rounded-full font-semibold whitespace-nowrap",
   {
     variants: {
       variant: {
-        primary: "bg-accent text-on",
-        ghost: "bg-transparent text-fg hover:bg-soft",
-        soft: "bg-soft text-fg border border-line",
-        danger: "bg-soft text-coral",
+        primary: "btn-primary",
+        ghost: "btn-ghost",
+        soft: "btn-soft",
+        danger: "btn-danger",
       },
       size: {
-        md: "h-11 px-4 text-sm",
-        sm: "h-9 px-3 text-sm",
+        md: "h-12 px-6 text-[15px]",
+        sm: "h-10 px-4 text-sm",
         icon: "h-10 w-10",
       },
     },
@@ -41,7 +42,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cn(
-        "h-11 w-full rounded-2xl border border-line bg-panel px-3 text-sm outline-none placeholder:text-mute",
+        "input",
         props.className,
       )}
     />
@@ -53,7 +54,7 @@ export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
     <textarea
       {...props}
       className={cn(
-        "min-h-12 w-full resize-none rounded-2xl border border-line bg-panel px-3 py-3 text-sm outline-none placeholder:text-mute",
+        "input resize-none",
         props.className,
       )}
     />
@@ -66,9 +67,9 @@ export function Toggle({ checked, onCheckedChange, label }: { checked: boolean; 
       checked={checked}
       onCheckedChange={onCheckedChange}
       aria-label={label}
-      className="relative h-7 w-12 rounded-full bg-line data-[state=checked]:bg-accent"
+      className="toggle relative h-7 w-12 shrink-0 rounded-full bg-line data-[state=checked]:bg-accent"
     >
-      <Switch.Thumb className="block h-5 w-5 translate-x-1 rounded-full bg-panel shadow-sm transition data-[state=checked]:translate-x-6" />
+      <Switch.Thumb className="toggle-thumb block h-5 w-5 translate-x-1 rounded-full bg-white data-[state=checked]:translate-x-6" />
     </Switch.Root>
   );
 }
@@ -87,13 +88,22 @@ export function Modal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/30" />
-        <Dialog.Content className="panel fixed left-1/2 top-1/2 z-50 max-h-[min(84dvh,720px)] w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-5">
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" />
+        <Dialog.Content className="panel !rounded-[20px] !shadow-[var(--ma-shadow-lg)] fixed left-1/2 top-1/2 z-50 max-h-[min(84dvh,720px)] w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-5">
           <Dialog.Title className="display text-2xl">{title}</Dialog.Title>
           <Dialog.Description className="sr-only">{title}</Dialog.Description>
           <div className="mt-4">{children}</div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+export function EmptyState({ text, icon: Icon = Inbox }: { text: string; icon?: LucideIcon }) {
+  return (
+    <div className="empty">
+      <span className="empty-icon"><Icon size={24} strokeWidth={1.75} /></span>
+      <p>{text}</p>
+    </div>
   );
 }
