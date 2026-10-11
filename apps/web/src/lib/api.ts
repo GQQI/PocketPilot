@@ -107,6 +107,8 @@ export const api = {
   agentConfig: (id: string, patch: { cliPath?: string; model?: string; apiKey?: string }) => request<AgentStatus>(`/api/agents/${id}/config`, json(patch)),
   agentChat: (id: string, req: AgentChatRequest, onEvent: (event: StreamEvent) => void, signal: AbortSignal) =>
     stream(`/api/agents/${id}/chat`, req, onEvent, signal),
+  privacy: () => request<{ dataDir: string; keepHistory: boolean }>("/api/privacy"),
+  setPrivacy: (body: { keepHistory?: boolean; clearHistory?: boolean }) => request<{ dataDir: string; keepHistory: boolean }>("/api/privacy", json(body)),
   hostFs: (dir: string) => request<FsListing>(`/api/host/fs?path=${encodeURIComponent(dir)}`),
 };
 

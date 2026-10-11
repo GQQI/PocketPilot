@@ -2,7 +2,7 @@ import { catalogById, createHub, HubError, listHostDirectory, resolveInside } fr
 import { serve } from "@hono/node-server";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
@@ -161,6 +161,18 @@ app.post("/api/agents/:id/chat", async (c) => {
     prompt: String(body.prompt ?? ""),
     model: body.model ? String(body.model) : undefined,
   }, c.req.raw.signal));
+});
+app.get("/api/privacy", (c) => c.json({ dataDir: hub.dataDir, keepHistory: !existsSync(path.join(hub.dataDir, "no-history")) }));
+app.post("/api/privacy", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const flag = path.join(hub.dataDir, "no-history");
+  if (typeof body.keepHistory === "boolean") {
+    if (body.keepHistory) rmSync(flag, { force: true });
+    else writeFileSync(flag, "PocketPilot does not keep its own chat records while this file exists.\n");
+  }
+  if (body.clearHistory === true) for (const f of ["cursor-chats.json", "grok-chats.json", "grok-usage.jsonl"]) rmSync(path.join(hub.dataDir, f), { force: true });
+  hub.agents.invalidate();
+  return c.json({ dataDir: hub.dataDir, keepHistory: !existsSync(flag) });
 });
 app.get("/api/host/fs", (c) => c.json(listHostDirectory(c.req.query("path") ?? "")));
 app.get("/api/fs", (c) => c.json(hub.listDirs(c.req.query("path") ?? "")));

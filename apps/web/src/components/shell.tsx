@@ -1,7 +1,9 @@
-import { FolderTree, LayoutGrid, MessageCircle, Monitor, ScanLine, Settings, Smartphone, Sparkles } from "lucide-react";
+import { FolderTree, LayoutGrid, MessageCircle, ScanLine, Settings, Smartphone, X } from "lucide-react";
+import { Logo } from "@/components/logo";
 import { NavLink } from "react-router";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { TaskNote } from "@/lib/notify";
 import { Button, Input } from "@/components/ui";
 import { useApp } from "@/lib/store";
 import { useScanPair } from "@/components/remote-pair";
@@ -22,7 +24,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="mx-auto flex h-full w-full max-w-[1240px] flex-col md:flex-row">
         <div className="order-1 flex min-h-0 min-w-0 flex-1 flex-col md:order-2">
           <header className="app-header flex items-center justify-between px-4 pb-2 md:px-8">
-            <div className="brand"><span className="brand-logo"><Sparkles size={14} strokeWidth={2.25} /></span>PocketPilot</div>
+            <div className="brand"><Logo size={26} className="brand-logo-svg" />PocketPilot</div>
             <button type="button" className="icon-btn" aria-label={t("scan.label")} data-testid="scan-btn" onClick={() => void scan.start()}>
               <ScanLine size={20} strokeWidth={1.9} />
             </button>
@@ -65,6 +67,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </nav>
       </div>
       {scan.modal}
+      <TaskBanner />
       {notice ? <div className="notice">{notice}</div> : null}
     </div>
   );
@@ -80,7 +83,7 @@ function PairGate() {
       <div className="hero" aria-hidden="true">
         <span className="hero-icon"><Smartphone size={26} strokeWidth={1.75} /></span>
         <span className="hero-link" />
-        <span className="hero-icon hero-icon-main"><Monitor size={26} strokeWidth={1.75} /></span>
+        <span className="hero-icon hero-icon-main"><Logo size={44} /></span>
       </div>
       <h1 className="display text-3xl">{t("pair.title")}</h1>
       <p className="mt-3 max-w-md text-sm leading-6 text-mute">{t("pair.help")}</p>
@@ -102,5 +105,31 @@ export function Mark({ monogram, accent }: { monogram: string; accent: string })
     <span className="mark" style={{ background: accent }}>
       {monogram}
     </span>
+  );
+}
+
+/** In-app popup for finished / failed tasks while the app is in the foreground. */
+function TaskBanner() {
+  const [note, setNote] = useState<TaskNote | null>(null);
+  useEffect(() => {
+    const on = (event: Event) => setNote((event as CustomEvent<TaskNote>).detail);
+    window.addEventListener("pocketpilot:task", on);
+    return () => window.removeEventListener("pocketpilot:task", on);
+  }, []);
+  useEffect(() => {
+    if (!note) return;
+    const timer = window.setTimeout(() => setNote(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [note]);
+  if (!note) return null;
+  return (
+    <div className={`task-banner task-${note.kind}`} role="status" data-testid="task-banner">
+      <span className="task-dot" />
+      <div className="min-w-0 flex-1">
+        <div className="task-title">{note.title}</div>
+        <div className="task-body">{note.body}</div>
+      </div>
+      <button type="button" aria-label="close" className="task-x" onClick={() => setNote(null)}><X size={16} /></button>
+    </div>
   );
 }

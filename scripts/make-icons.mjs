@@ -1,11 +1,15 @@
 import { deflateSync } from "node:zlib";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(root, "apps/web/public/icons");
 mkdirSync(outDir, { recursive: true });
+if (existsSync(path.join(outDir, "icon-192.png")) && existsSync(path.join(outDir, "icon-512.png"))) {
+  console.log("icons exist (rendered from favicon.svg by scripts/make-web-icons.mjs)");
+  process.exit(0);
+}
 
 function crc32(buf) {
   let c = ~0;
