@@ -17,7 +17,7 @@ export const CATALOG: CatalogEntry[] = [
     id: "cursor",
     name: "Cursor CLI",
     vendor: "Cursor",
-    cli: "agent",
+    cli: "cursor-agent",
     defaultModel: "auto",
     models: ["auto", "composer"],
     endpoint: "",

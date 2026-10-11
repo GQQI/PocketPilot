@@ -1,4 +1,4 @@
-import { createHub, HubError, resolveInside } from "@pocketpilot/agent-core";
+import { catalogById, createHub, HubError, listHostDirectory, resolveInside } from "@pocketpilot/agent-core";
 import { serve } from "@hono/node-server";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { timingSafeEqual } from "node:crypto";
@@ -129,6 +129,40 @@ app.post("/api/desktop/config", async (c) => {
   }
   return c.json({ ok: true });
 });
+// ---- real platforms on this PC (see packages/agent-core/src/local) ----
+app.get("/api/agents", async (c) => c.json(await hub.agents.overview(c.req.query("refresh") === "1")));
+app.get("/api/agents/:id", async (c) => c.json(await hub.agents.status(c.req.param("id"), c.req.query("refresh") === "1")));
+app.get("/api/agents/:id/projects", async (c) => c.json(await hub.agents.projects(c.req.param("id"))));
+app.get("/api/agents/:id/sessions", async (c) => {
+  const limit = Math.min(200, Math.max(1, Number(c.req.query("limit") ?? 60) || 60));
+  return c.json(await hub.agents.sessions(c.req.param("id"), c.req.query("project") || undefined, limit));
+});
+app.get("/api/agents/:id/sessions/:sid/messages", async (c) => {
+  const limit = Math.min(500, Math.max(1, Number(c.req.query("limit") ?? 120) || 120));
+  return c.json(await hub.agents.messages(c.req.param("id"), c.req.param("sid"), limit));
+});
+app.get("/api/agents/:id/usage", async (c) => c.json(await hub.agents.usage(c.req.param("id"), c.req.query("refresh") === "1")));
+app.post("/api/agents/:id/config", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const patch: { cliPath?: string; model?: string } = {};
+  if (typeof body.cliPath === "string") patch.cliPath = body.cliPath;
+  if (typeof body.model === "string") patch.model = body.model.trim() || catalogById(id)?.defaultModel || "";
+  if (Object.keys(patch).length) hub.updateSettings({ providers: { [id]: patch } } as never);
+  if (typeof body.apiKey === "string") hub.setSecret(id, body.apiKey);
+  hub.agents.invalidate(id);
+  return c.json(await hub.agents.status(id, true));
+});
+app.post("/api/agents/:id/chat", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return sseFrom(c, hub.agents.chat(c.req.param("id"), {
+    sessionId: body.sessionId ? String(body.sessionId) : undefined,
+    cwd: String(body.cwd ?? ""),
+    prompt: String(body.prompt ?? ""),
+    model: body.model ? String(body.model) : undefined,
+  }, c.req.raw.signal));
+});
+app.get("/api/host/fs", (c) => c.json(listHostDirectory(c.req.query("path") ?? "")));
 app.get("/api/fs", (c) => c.json(hub.listDirs(c.req.query("path") ?? "")));
 
 app.post("/api/settings", async (c) => c.json(hub.updateSettings(await c.req.json())));

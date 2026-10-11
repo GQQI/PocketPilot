@@ -1,9 +1,9 @@
 import { Capacitor } from "@capacitor/core";
 import jsQR from "jsqr";
 import { useEffect, useRef, useState } from "react";
-import { Button, Input } from "@/components/ui";
+import { Button, Input, Modal } from "@/components/ui";
 import { api } from "@/lib/api";
-import { parsePairPayload, pairFromPayload, rtcConfigured, rtcHost } from "@/lib/rtc";
+import { parsePairPayload, pairFromPayload } from "@/lib/rtc";
 import { useApp } from "@/lib/store";
 
 /** Full-screen state shown when the PWA is opened from a pairing QR (`/#pair=<sid>.<secret>`). */
@@ -72,7 +72,7 @@ async function nativeScan(onResult: (text: string) => void, onClose: () => void)
   }
 }
 
-export function Scanner({ onResult, onClose }: { onResult: (text: string) => void; onClose: () => void }) {
+function WebCamera({ onResult, onClose }: { onResult: (text: string) => void; onClose: () => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState("");
   const callbacks = useRef({ onResult, onClose });
@@ -82,8 +82,6 @@ export function Scanner({ onResult, onClose }: { onResult: (text: string) => voi
     let stream: MediaStream | undefined;
     const canvas = document.createElement("canvas");
     async function start() {
-      if (await nativeScan((text) => callbacks.current.onResult(text), () => callbacks.current.onClose())) return;
-      if (stop) return;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         const el = video.current;
@@ -121,30 +119,21 @@ export function Scanner({ onResult, onClose }: { onResult: (text: string) => voi
     <div className="mt-3">
       <video ref={video} className="w-full rounded-2xl bg-black" playsInline muted />
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
-      <Button className="mt-2" size="sm" variant="ghost" onClick={onClose}>{useApp().t("remote.cancel")}</Button>
     </div>
   );
 }
 
-/** Settings section: show a pairing QR (on the PC) or scan one (on the phone). */
-export function RemotePairPanel() {
+/**
+ * The scan entry used by the top-right icon (same component on the pairing screen and everywhere else).
+ * In the APK it opens the camera scanner directly; in a browser it falls back to a paste-the-link dialog.
+ */
+export function useScanPair() {
   const { t, setNotice } = useApp();
-  const [session, setSession] = useState<{ url: string; expiresAt: number; qrSvg: string } | null>(null);
-  const [left, setLeft] = useState(0);
-  const [error, setError] = useState("");
-  const [scanning, setScanning] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [camera, setCamera] = useState(false);
   const [paste, setPaste] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!session) return;
-    const timer = setInterval(() => {
-      const remaining = Math.max(0, Math.round((session.expiresAt - Date.now()) / 1000));
-      setLeft(remaining);
-      if (remaining === 0) setSession(null);
-    }, 500);
-    return () => clearInterval(timer);
-  }, [session]);
+  const [error, setError] = useState("");
 
   function pairWith(text: string) {
     const payload = parsePairPayload(text);
@@ -152,8 +141,9 @@ export function RemotePairPanel() {
       setNotice(t("remote.invalid"));
       return;
     }
-    setScanning(false);
+    setCamera(false);
     setBusy(true);
+    setOpen(true);
     setError("");
     pairFromPayload(payload, api.deviceName()).then((token) => {
       api.adoptToken(token);
@@ -164,68 +154,30 @@ export function RemotePairPanel() {
     });
   }
 
-  return (
-    <section className="panel mt-4 p-4" data-testid="remote-pair">
-      <h2 className="font-medium">{t("remote.title")}</h2>
-      <p className="mt-1 text-sm leading-6 text-mute">{t("remote.help")}</p>
-      {rtcConfigured() ? <p className="mt-2 text-xs text-mute">{t("remote.linked", { host: rtcHost() })}</p> : null}
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => void api.remoteSession().then((next) => { setSession(next); setLeft(Math.round((next.expiresAt - Date.now()) / 1000)); setError(""); }).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : String(caught)))}>{t("remote.generate")}</Button>
-        <Button size="sm" variant="soft" onClick={() => setScanning((value) => !value)}>{t("remote.scan")}</Button>
-      </div>
-      {session ? (
-        <div className="mt-3">
-          <img alt="pairing QR" className="mx-auto w-56 rounded-2xl bg-white p-2" src={`data:image/svg+xml;utf8,${encodeURIComponent(session.qrSvg)}`} />
-          <p className="mt-2 text-center text-xs text-mute">{t("remote.expires", { s: left })}</p>
-          <p className="mt-1 break-all text-center text-[10px] text-mute">{session.url}</p>
+  async function start() {
+    setError("");
+    if (Capacitor.isNativePlatform() && (await nativeScan(pairWith, () => undefined))) return;
+    setOpen(true);
+  }
+
+  const modal = (
+    <Modal open={open} onOpenChange={(next) => { setOpen(next); if (!next) setCamera(false); }} title={t("scan.title")}>
+      <div data-testid="scan-sheet">
+        <p className="text-sm leading-6 text-mute">{t("scan.help")}</p>
+        {typeof navigator.mediaDevices?.getUserMedia === "function" ? (
+          <Button className="mt-4 w-full" variant="soft" disabled={busy} onClick={() => setCamera((value) => !value)}>{t("scan.camera")}</Button>
+        ) : null}
+        {camera ? <WebCamera onResult={pairWith} onClose={() => setCamera(false)} /> : null}
+        <label className="mt-4 block">{t("scan.paste")}</label>
+        <div className="mt-2 flex gap-2">
+          <Input value={paste} placeholder="https://…#pair=…" onChange={(event) => setPaste(event.target.value)} />
+          <Button size="sm" disabled={!paste.trim() || busy} onClick={() => pairWith(paste)}>{t("scan.go")}</Button>
         </div>
-      ) : null}
-      {scanning ? <Scanner onResult={pairWith} onClose={() => setScanning(false)} /> : null}
-      <div className="mt-3 flex gap-2">
-        <Input value={paste} placeholder={t("remote.paste")} onChange={(event) => setPaste(event.target.value)} />
-        <Button size="sm" variant="soft" disabled={!paste.trim() || busy} onClick={() => pairWith(paste)}>{t("remote.pasteBtn")}</Button>
+        {busy ? <p className="mt-3 text-sm">{t("remote.pairing")}</p> : null}
+        {error ? <p className="mt-3 text-sm text-coral">{error}</p> : null}
       </div>
-      {busy ? <p className="mt-2 text-sm">{t("remote.pairing")}</p> : null}
-      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
-    </section>
+    </Modal>
   );
-}
-/** Pairing by QR scan or pasted link (works in the browser and in the Capacitor app). Used on the unpaired screen. */
-export function PairByLink() {
-  const { t, setNotice } = useApp();
-  const [scanning, setScanning] = useState(false);
-  const [paste, setPaste] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
 
-  function pairWith(text: string) {
-    const payload = parsePairPayload(text);
-    if (!payload) {
-      setNotice(t("remote.invalid"));
-      return;
-    }
-    setScanning(false);
-    setBusy(true);
-    setError("");
-    pairFromPayload(payload, api.deviceName()).then((token) => {
-      api.adoptToken(token);
-      window.location.replace("/");
-    }).catch((caught: unknown) => {
-      setError(caught instanceof Error ? caught.message : String(caught));
-      setBusy(false);
-    });
-  }
-
-  return (
-    <div data-testid="pair-by-link">
-      <Button className="mt-6 w-full" variant="soft" disabled={busy} onClick={() => setScanning((value) => !value)}>{t("remote.scan")}</Button>
-      {scanning ? <Scanner onResult={pairWith} onClose={() => setScanning(false)} /> : null}
-      <div className="mt-3 flex gap-2">
-        <Input value={paste} placeholder={t("remote.paste")} onChange={(event) => setPaste(event.target.value)} />
-        <Button size="sm" variant="soft" disabled={!paste.trim() || busy} onClick={() => pairWith(paste)}>{t("remote.pasteBtn")}</Button>
-      </div>
-      {busy ? <p className="mt-2 text-sm">{t("remote.pairing")}</p> : null}
-      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
-    </div>
-  );
+  return { start, modal };
 }

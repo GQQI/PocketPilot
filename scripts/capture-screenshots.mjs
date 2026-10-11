@@ -1,109 +1,122 @@
-import { mkdirSync } from "node:fs";
+// Drives the real web UI against a real host on this PC and saves screenshots.
+// Everything shown is read from the platforms installed here (no demo data).
+//   node scripts/capture-screenshots.mjs            -> .tmp/shots/*.png
+// Optional env: SHOT_DIR, CLAUDE_CLI (full path to claude when it is not on PATH), SEND_CODEX=0 to skip the live Codex message.
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outDir = path.join(root, "artifacts");
-const base = process.env.POCKETPILOT_URL ?? "http://127.0.0.1:47231";
+const out = process.env.SHOT_DIR ?? path.join(root, ".tmp", "shots");
+const home = path.join(root, ".tmp", "shots-home");
+const port = 47251;
+const base = `http://127.0.0.1:${port}`;
+mkdirSync(out, { recursive: true });
+rmSync(home, { recursive: true, force: true });
+mkdirSync(home, { recursive: true });
+const providers = process.env.CLAUDE_CLI ? { "claude-code": { enabled: true, model: "sonnet", cliPath: process.env.CLAUDE_CLI, endpoint: "" } } : {};
+writeFileSync(path.join(home, "settings.json"), JSON.stringify({ locale: "zh", theme: "light", demoMode: false, providers }));
 
-mkdirSync(outDir, { recursive: true });
-
-const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
-
-async function reset() {
-  const response = await page.request.post(`${base}/api/demo/reset`);
-  if (!response.ok()) throw new Error(`reset ${response.status()}`);
-  const settings = await page.request.post(`${base}/api/settings`, {
-    data: {
-      theme: "light",
-      locale: "zh",
-      demoMode: true,
-      activeProviderId: "cursor",
-      workspacePath: "",
-      providers: { cursor: { enabled: true, model: "auto", cliPath: "agent", endpoint: "" } },
-    },
-  });
-  if (!settings.ok()) throw new Error(`settings ${settings.status()}`);
+function findChromium() {
+  const cache = path.join(process.env.LOCALAPPDATA ?? "", "ms-playwright");
+  if (!existsSync(cache)) return undefined;
+  for (const dir of readdirSync(cache).filter((n) => n.startsWith("chromium")).sort().reverse()) {
+    for (const rel of ["chrome-win/chrome.exe", "chrome-win64/chrome.exe", "chrome-linux/chrome"]) {
+      const p = path.join(cache, dir, rel);
+      if (existsSync(p)) return p;
+    }
+  }
+  return undefined;
 }
 
+const server = spawn(process.execPath, [path.join(root, "apps/bridge/dist/server.cjs")], {
+  cwd: root,
+  stdio: "ignore",
+  env: { ...process.env, HOST: "127.0.0.1", POCKETPILOT_PORT: String(port), POCKETPILOT_HOME: home, POCKETPILOT_STATIC: path.join(root, "apps/web/dist") },
+});
+let browser;
 try {
-await page.goto(base, { waitUntil: "networkidle" });
-await reset();
-await page.reload({ waitUntil: "networkidle" });
-await page.getByTestId("home").waitFor();
-await page.getByRole("heading", { name: "手机控制这台电脑" }).waitFor();
-await page.screenshot({ path: path.join(outDir, "home_simplified.png") });
+  for (let i = 0; i < 50; i++) {
+    try { if ((await fetch(`${base}/api/health`)).ok) break; } catch { /* starting */ }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  try { browser = await chromium.launch(); } catch { browser = await chromium.launch({ executablePath: findChromium() }); }
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  page.on("pageerror", (e) => console.log("pageerror", e.message));
+  const shot = (name) => page.screenshot({ path: path.join(out, `${name}.png`) });
+  const nav = (label) => page.locator("nav.dock a", { hasText: label }).click();
 
-await page.getByTestId("open-agents").click();
-await page.getByTestId("agent-switcher").waitFor();
-const names = ["Cursor CLI", "Claude Code", "Codex", "OpenCode", "Gemini CLI", "DeepSeek Harness"];
-for (const name of names) await page.getByRole("button", { name: new RegExp(name) }).waitFor();
-await page.screenshot({ path: path.join(outDir, "agent_picker.png") });
-await page.getByRole("button", { name: /Codex/ }).click();
-await page.getByRole("heading", { name: "Codex" }).waitFor();
-await page.getByText("生成迁移脚本").waitFor();
-await page.getByTestId("open-agents").click();
-await page.getByRole("button", { name: /DeepSeek Harness/ }).click();
-await page.getByText("把会话工具拆成插件").waitFor();
-await page.getByTestId("open-agents").click();
-await page.getByRole("button", { name: /Cursor CLI/ }).click();
-await page.getByText("收紧登录态中间件").waitFor();
+  await page.goto(base, { waitUntil: "networkidle" });
+  await page.getByTestId("agent-count").waitFor();
+  await page.getByTestId("recent-sessions").locator(".row-card").first().waitFor({ timeout: 30000 });
+  console.log("agents:", (await page.getByTestId("agent-count").innerText()).replace(/\n/g, " | "));
+  await shot("01_overview");
 
-await page.getByRole("button", { name: "选择目录" }).click();
-await page.getByTestId("dir-picker").waitFor();
-await page.getByRole("button", { name: "D:\\", exact: true }).click();
-await page.getByRole("button", { name: "Project", exact: true }).click();
-await page.getByRole("button", { name: "harbor-ledger", exact: true }).waitFor();
-await page.screenshot({ path: path.join(outDir, "remote_directory.png") });
-await page.getByRole("button", { name: "harbor-ledger", exact: true }).click();
-await page.getByRole("button", { name: "用这个目录" }).click();
-await page.getByText("D:\\Project\\harbor-ledger").waitFor();
+  await nav("会话");
+  await page.getByTestId("sessions").locator(".row-card").first().waitFor({ timeout: 30000 });
+  await shot("02_sessions");
 
-await page.goto(`${base}/chat/ses_cursor_auth`, { waitUntil: "networkidle" });
-await page.getByTestId("chat").waitFor();
-await page.getByText("D:\\Project\\harbor-ledger").waitFor();
-const box = page.getByPlaceholder("写在手机上，发到这台电脑");
-await box.fill("看一下登录中间件");
-await page.getByRole("button", { name: "发送" }).click();
-const live = page.getByTestId("live-output");
-await live.waitFor({ timeout: 8000 });
-await page.screenshot({ path: path.join(outDir, "chat_live_output.png") });
-await page.getByText("Cursor CLI 接手").waitFor({ timeout: 8000 });
+  // open a real history chat of the selected platform
+  await page.getByTestId("sessions").locator(".row-card").first().click();
+  await page.getByTestId("chat").locator(".user-bubble").first().waitFor({ timeout: 30000 });
+  await shot("03_chat_history");
 
-await page.goto(`${base}/settings`, { waitUntil: "networkidle" });
-await page.getByTestId("theme-toggle").waitFor();
-await page.getByRole("button", { name: "浅色" }).waitFor();
-await page.getByRole("button", { name: "深色" }).waitFor();
-await page.getByText("配对码").first().waitFor();
-await page.screenshot({ path: path.join(outDir, "settings_theme.png") });
-await page.getByRole("button", { name: "深色" }).click();
-await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
-await page.getByRole("button", { name: "浅色" }).click();
-await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+  await nav("项目");
+  await page.getByTestId("projects").locator(".row-card").first().waitFor({ timeout: 30000 });
+  await shot("04_projects");
+  await page.getByTestId("projects").locator(".row-card").first().click();
+  await page.getByTestId("project").waitFor();
+  await page.waitForTimeout(500);
+  await shot("05_project_sessions");
 
-const liveOff = await page.request.post(`${base}/api/settings`, {
-  data: {
-    demoMode: false,
-    workspacePath: "/tmp",
-    providers: { cursor: { enabled: true, model: "auto", cliPath: "pocketpilot-missing-cli", endpoint: "" } },
-  },
-});
-if (!liveOff.ok()) throw new Error(`live settings ${liveOff.status()}`);
-const created = await page.request.post(`${base}/api/sessions`, {
-  data: { providerId: "cursor", projectId: "live__cursor", title: "bridge" },
-});
-if (!created.ok()) throw new Error(`session ${created.status()} ${await created.text()}`);
-const body = await created.json();
-await page.goto(`${base}/chat/${body.session.id}`, { waitUntil: "networkidle" });
-await page.getByPlaceholder("写在手机上，发到这台电脑").fill("hello from the phone");
-await page.getByRole("button", { name: "发送" }).click();
-await page.getByText("pocketpilot-missing-cli").waitFor({ timeout: 8000 });
+  await nav("设置");
+  await page.getByTestId("platform-detail").waitFor();
+  await page.getByTestId("usage").getByText(/请求|暂不提供/).first().waitFor({ timeout: 90000 });
+  await shot("06_settings_cursor_usage");
+  for (const [name, file] of [["Codex", "07_settings_codex_usage"], ["Claude Code", "08_settings_claude_usage"]]) {
+    const tab = page.getByTestId("agent-picker").getByRole("tab", { name: new RegExp(name) });
+    if (!(await tab.count())) { console.log("tab missing", name); continue; }
+    await tab.click();
+    await page.waitForTimeout(300);
+    await page.getByTestId("usage").getByText(/请求|暂不提供/).first().waitFor({ timeout: 120000 });
+    await shot(file);
+  }
 
-await reset();
-console.log("screenshots written to", outDir);
+  // scan entry (top right) falls back to the paste dialog in a browser
+  await page.getByTestId("scan-btn").click();
+  await page.getByTestId("scan-sheet").waitFor();
+  await shot("09_scan_dialog");
+  await page.keyboard.press("Escape");
+
+  // real Cursor chat when the CLI is missing: composer is disabled and says why
+  await nav("项目");
+  await page.getByTestId("agent-picker").getByRole("tab", { name: /Cursor/ }).click();
+  await page.getByTestId("projects").locator(".row-card").first().click();
+  await page.getByRole("button", { name: /在这里新对话|New chat here/ }).isDisabled().then((d) => console.log("cursor new chat disabled (no CLI):", d));
+
+  if (process.env.SEND_CODEX !== "0") {
+    // set a model this account accepts, then send a real prompt through Codex in a scratch folder
+    await nav("设置");
+    await page.getByTestId("agent-picker").getByRole("tab", { name: /Codex/ }).click();
+    const detail = page.getByTestId("platform-detail");
+    await detail.locator('input[list="models-codex"]').fill(process.env.CODEX_MODEL ?? "gpt-5.5");
+    await detail.getByRole("button", { name: "保存", exact: true }).click();
+    const scratch = path.join(root, ".tmp", "chatcwd");
+    mkdirSync(scratch, { recursive: true });
+    await page.goto(`${base}/chat/codex/new?cwd=${encodeURIComponent(scratch)}`, { waitUntil: "networkidle" });
+    await page.getByTestId("composer").fill("Reply with exactly the word PONG and nothing else. Do not run any commands.");
+    await page.getByTestId("composer").evaluate((el) => el.dispatchEvent(new Event("input", { bubbles: true })));
+    await shot("10_composer_filled");
+    await page.getByTestId("send").click();
+    await page.locator(".assistant-msg", { hasText: "PONG" }).first().waitFor({ timeout: 40000 }).catch(() => console.log("no PONG within 40s"));
+    await page.waitForTimeout(800);
+    await shot("11_codex_live_reply");
+    console.log("codex page text:", (await page.locator("main").innerText()).slice(-400).replace(/\s+/g," "));
+  }
+  console.log("screenshots in", out);
 } finally {
-  await reset().catch(() => {});
-  await browser.close();
+  await browser?.close();
+  server.kill();
 }

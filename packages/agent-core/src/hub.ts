@@ -28,6 +28,7 @@ import { DemoEngine } from "./demo-engine";
 import { HubError } from "./errors";
 import { applyLegacyEnv, resolveDefaultDataDir } from "./compat";
 import { LiveEngine, type LiveSnapshot } from "./live-engine";
+import { LocalAgents, type AgentCtx } from "./local";
 import type { DemoSnapshot } from "./seed";
 
 export interface AgentAdapter {
@@ -133,6 +134,8 @@ export class Hub {
   private onDevices?: () => void;
   private fails = new Map<string, FailState>();
   private lastSeenSaved = 0;
+  /** Real platform detection / history / chat / usage on this PC (no demo data). */
+  readonly agents = new LocalAgents((id) => this.agentCtx(id));
 
   constructor(options: HubOptions = {}) {
     applyLegacyEnv();
@@ -544,6 +547,20 @@ export class Hub {
     if (meta.envKeys.some((key) => Boolean(process.env[key]))) return "env";
     if (this.secrets[meta.id]) return "file";
     return "none";
+  }
+
+  agentCtx(providerId: string): AgentCtx {
+    const meta = this.requireMeta(providerId);
+    const base = this.liveContext(providerId);
+    const config = this.settings.providers[providerId];
+    return {
+      cliPath: base.cliPath,
+      model: config && config.model !== meta.defaultModel ? config.model : "",
+      env: base.env,
+      keySource: this.keySource(meta),
+      dataDir: this.dataDir,
+      locale: this.settings.locale,
+    };
   }
 
   private liveContext(providerId: string) {

@@ -1,261 +1,246 @@
-import type { ChatMessage, StreamEvent, TerminalEvent } from "@pocketpilot/protocol";
+import { ArrowLeft, ArrowUp, Plus, Square } from "lucide-react";
+import type { ChatMessage, MessageBlock, StreamEvent } from "@pocketpilot/protocol";
 import { useEffect, useRef, useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router";
-import { Mark } from "@/components/shell";
+import { useNavigate, useParams, useSearchParams } from "react-router";
+import { AgentPicker } from "@/components/agent-picker";
 import { RichText } from "@/components/rich-text";
-import { Button, Modal, Textarea, EmptyState } from "@/components/ui";
-import { ApiError, api } from "@/lib/api";
+import { Button, EmptyState } from "@/components/ui";
+import { api } from "@/lib/api";
 import { useApp } from "@/lib/store";
+import { SessionRow, useSessions } from "./home";
 
+/** "会话" tab: real chat history of the selected platform. */
 export function ChatIndex() {
-  const { data } = useApp();
-  if (!data) return null;
-  const active = data.settings.activeProviderId;
-  const session = data.sessions.find((item) => item.providerId === active) ?? data.sessions[0];
-  if (!session) return <EmptyChat />;
-  return <Navigate to={`/chat/${session.id}`} replace />;
+  const { agent, t } = useApp();
+  const navigate = useNavigate();
+  const [limit, setLimit] = useState(40);
+  const [query, setQuery] = useState("");
+  const { rows } = useSessions(agent?.id, undefined, limit);
+  if (!agent) return <div className="px-4 pt-8 text-mute md:px-8">{t("a.none")}</div>;
+  const shown = (rows ?? []).filter((s) => !query.trim() || `${s.title} ${s.projectName}`.toLowerCase().includes(query.trim().toLowerCase()));
+  return (
+    <div className="app-scroll h-full overflow-y-auto px-4 pb-8 md:px-8" data-testid="sessions">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="display !p-0 text-3xl">{t("nav.chat")}</h1>
+        <Button size="sm" disabled={!agent.available} onClick={() => navigate("/projects")}><Plus size={16} />{t("a.newChat")}</Button>
+      </div>
+      <div className="mt-3"><AgentPicker /></div>
+      <input className="input mt-3" value={query} placeholder={t("a.search")} onChange={(event) => setQuery(event.target.value)} />
+      <div className="mt-3 space-y-2">
+        {rows === null ? <p className="text-sm text-mute">{t("common.loading")}</p> : null}
+        {rows && shown.length === 0 ? <EmptyState text={agent.canListSessions ? t("a.recentEmpty") : t("set.noUsage")} /> : null}
+        {shown.map((session) => <SessionRow key={session.id} session={session} onOpen={() => navigate(`/chat/${agent.id}/${session.id}`)} />)}
+      </div>
+      {rows && rows.length >= limit ? <Button className="mt-4 w-full" variant="soft" onClick={() => setLimit(limit + 40)}>{t("a.more")}</Button> : null}
+    </div>
+  );
 }
+
+type UiMessage = ChatMessage & { error?: boolean };
 
 export function ChatPage() {
-  const { sessionId = "" } = useParams();
-  const { data, t, ideas, replace, setNotice } = useApp();
+  const { agent: agentId = "", sid = "new" } = useParams();
+  const [params] = useSearchParams();
+  const { overview, t, setNotice } = useApp();
   const navigate = useNavigate();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [pane, setPane] = useState<"chat" | "terminal">("chat");
+  const agent = overview?.agents.find((a) => a.id === agentId) ?? null;
+  const isNew = sid === "new";
+  const [sessionId, setSessionId] = useState(isNew ? "" : sid);
+  const [cwd, setCwd] = useState(params.get("cwd") ?? "");
+  const [title, setTitle] = useState("");
+  const [messages, setMessages] = useState<UiMessage[]>([]);
+  const [limit, setLimit] = useState(80);
+  const [loaded, setLoaded] = useState(isNew);
   const [draft, setDraft] = useState("");
-  const [live, setLive] = useState<Live | null>(null);
   const [running, setRunning] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [lines, setLines] = useState<string[]>([]);
-  const [command, setCommand] = useState("");
+  const [status, setStatus] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const area = useRef<HTMLTextAreaElement>(null);
+  const stick = useRef(true);
+  const streaming = useRef(false);
 
-  const session = data?.sessions.find((item) => item.id === sessionId);
-  const provider = data?.providers.find((item) => item.meta.id === session?.providerId);
-  const project = data?.projects.find((item) => item.id === session?.projectId);
-  const related = data?.sessions.filter((item) => item.providerId === session?.providerId) ?? [];
-
+  // existing session: load real history + find its project
   useEffect(() => {
+    if (isNew || !agentId) return;
+    if (streaming.current) return;
     let cancelled = false;
-    setLive(null);
-    void api.messages(sessionId).then((rows) => {
-      if (!cancelled) setMessages(rows);
+    setLoaded(false);
+    void api.agentMessages(agentId, sid, limit).then((rows) => {
+      if (!cancelled) { setMessages(rows); setLoaded(true); }
     }).catch(() => {
-      if (!cancelled) setMessages([]);
+      if (!cancelled) { setMessages([]); setLoaded(true); }
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
+    void api.agentSessions(agentId, undefined, 200).then((rows) => {
+      const found = rows.find((row) => row.id === sid);
+      if (!cancelled && found) { setTitle(found.title); setCwd((current) => current || found.projectPath); }
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [agentId, sid, isNew, limit]);
 
   useEffect(() => {
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
-  }, [messages, live, lines, pane]);
+    const el = scroller.current;
+    if (el && stick.current) el.scrollTop = el.scrollHeight;
+  }, [messages, loaded, status]);
 
-  if (!data || !session || !provider) {
-    return <div className="px-4 pt-8 text-mute md:px-8">{t("home.empty")}</div>;
+  function autosize() {
+    const el = area.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }
 
-  async function send(text: string) {
-    const prompt = text.trim();
-    if (!prompt || running) return;
+  function patchLast(fn: (blocks: MessageBlock[]) => MessageBlock[]) {
+    setMessages((rows) => {
+      const last = rows[rows.length - 1];
+      if (!last || last.role !== "assistant") return rows;
+      return [...rows.slice(0, -1), { ...last, blocks: fn(last.blocks) }];
+    });
+  }
+
+  function onEvent(event: StreamEvent) {
+    if (event.type === "status") setStatus(event.status);
+    else if (event.type === "session") {
+      setSessionId(event.id);
+      window.history.replaceState(null, "", `/chat/${agentId}/${event.id}`);
+    } else if (event.type === "text") {
+      setStatus("");
+      patchLast((blocks) => {
+        const last = blocks[blocks.length - 1];
+        if (last?.type === "text") return [...blocks.slice(0, -1), { type: "text", text: last.text + event.delta }];
+        return [...blocks, { type: "text", text: event.delta }];
+      });
+    } else if (event.type === "thinking") {
+      patchLast((blocks) => {
+        const last = blocks[blocks.length - 1];
+        if (last?.type === "thinking") return [...blocks.slice(0, -1), { type: "thinking", text: last.text + event.delta }];
+        return [...blocks, { type: "thinking", text: event.delta }];
+      });
+    } else if (event.type === "tool") {
+      patchLast((blocks) => {
+        if (event.phase === "done") {
+          const at = blocks.findLastIndex((b) => b.type === "tool" && b.name === event.name && b.status === "running");
+          if (at >= 0) return blocks.map((b, i) => (i === at && b.type === "tool" ? { ...b, status: "done" as const } : b));
+        }
+        return [...blocks, { type: "tool", name: event.name, detail: event.detail, status: event.phase === "done" ? "done" : "running" }];
+      });
+    } else if (event.type === "error") {
+      setMessages((rows) => {
+        const last = rows[rows.length - 1];
+        const rest = last && last.role === "assistant" && last.blocks.length === 0 ? rows.slice(0, -1) : rows;
+        return [...rest, { id: `err_${Date.now()}`, role: "assistant", createdAt: new Date().toISOString(), blocks: [{ type: "text", text: event.message }], error: true }];
+      });
+    }
+  }
+
+  async function send() {
+    const text = draft.trim();
+    if (!text || running || !agent) return;
+    if (!cwd) { setNotice(t("a.noCwd")); return; }
     setDraft("");
-    setRunning(true);
-    setLive({ thinking: "", text: "", tools: [] });
+    requestAnimationFrame(autosize);
+    stick.current = true;
+    const now = new Date().toISOString();
+    setMessages((rows) => [
+      ...rows,
+      { id: `u_${Date.now()}`, role: "user", createdAt: now, blocks: [{ type: "text", text }] },
+      { id: `a_${Date.now()}`, role: "assistant", createdAt: now, blocks: [] },
+    ]);
+    if (!title) setTitle(text.slice(0, 40));
     const controller = new AbortController();
     abortRef.current = controller;
+    streaming.current = true;
+    setRunning(true);
     try {
-      await api.prompt(sessionId, prompt, (event) => setLive((current) => applyEvent(current, event)), controller.signal);
-      setMessages(await api.messages(sessionId));
-      replace(await api.bootstrap());
-    } catch (error) {
-      if (error instanceof ApiError && error.code === "busy") {
-        replace(await api.enqueue(sessionId, prompt));
-        setNotice(t("shell.noticeQueued"));
-      }
+      await api.agentChat(agent.id, { sessionId: sessionId || undefined, cwd, prompt: text }, onEvent, controller.signal);
+    } catch (caught) {
+      if (!controller.signal.aborted) onEvent({ type: "error", message: caught instanceof Error ? caught.message : String(caught) });
     } finally {
       setRunning(false);
-      setLive(null);
+      setStatus("");
       abortRef.current = null;
+      setMessages((rows) => rows.filter((row, i) => !(i === rows.length - 1 && row.role === "assistant" && row.blocks.length === 0)));
     }
   }
 
-  async function runCommand() {
-    const line = command.trim();
-    if (!line) return;
-    setCommand("");
-    const controller = new AbortController();
-    try {
-      await api.terminal(sessionId, line, (event: TerminalEvent) => {
-        setLines((current) => [...current, event.text].slice(-80));
-      }, controller.signal);
-    } catch {
-      setLines((current) => [...current, "failed"]);
-    }
-  }
+  if (!overview) return null;
+  if (!agent) return <div className="px-4 pt-8 text-mute md:px-8">{t("a.none")}</div>;
+  const canSend = agent.available && Boolean(cwd);
+  const projectName = cwd ? cwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() : "";
 
   return (
-    <div data-testid="chat" className="flex h-full flex-col px-4 md:px-8">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <Mark monogram={provider.meta.monogram} accent={provider.meta.accent} />
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold leading-tight">{session.title}</h1>
-            <p className="truncate text-xs text-mute">{provider.meta.name} · {t("chat.fromPc")}</p>
-            <p className="truncate text-xs text-mute">{data.settings.workspacePath || project?.path}</p>
-          </div>
+    <div className="flex h-full min-h-0 flex-col" data-testid="chat">
+      <div className="flex items-center gap-2 px-4 pb-2 md:px-8">
+        <Button size="icon" variant="ghost" aria-label={t("a.back")} onClick={() => navigate(-1)}><ArrowLeft size={20} /></Button>
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-semibold">{title || (isNew ? t("a.newIn") : "…")}</div>
+          <div className="truncate text-xs text-mute">{agent.name}{projectName ? ` · ${projectName}` : ""}</div>
         </div>
-        <Button size="sm" variant="soft" onClick={() => setCreating(true)}>{t("chat.new")}</Button>
       </div>
-      <div className="app-scroll mt-3 flex gap-2 overflow-x-auto px-0.5 pb-2">
-        {related.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={item.id === session.id ? "chip chip-on" : "chip"}
-            onClick={() => navigate(`/chat/${item.id}`)}
-          >
-            {item.title}
-          </button>
-        ))}
+      <div
+        ref={scroller}
+        className="chat-scroll app-scroll min-h-0 flex-1 overflow-y-auto px-4 md:px-8"
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+      >
+        {!loaded ? <p className="py-6 text-sm text-mute">{t("common.loading")}</p> : null}
+        {loaded && !isNew && messages.length >= limit ? <Button className="mb-3 w-full" size="sm" variant="soft" onClick={() => setLimit(limit + 200)}>{t("a.loadEarlier")}</Button> : null}
+        {loaded && messages.length === 0 && !isNew ? <EmptyState text={t("a.emptyChat")} /> : null}
+        <div className="space-y-4 pb-4">
+          {messages.map((message) => <Bubble key={message.id} message={message} />)}
+          {status ? <div className="status-chip">{status}</div> : null}
+        </div>
       </div>
-      <div className="seg mt-3">
-        <button type="button" className={pane === "chat" ? "seg-btn seg-on" : "seg-btn"} onClick={() => setPane("chat")}>{t("chat.talk")}</button>
-        <button type="button" className={pane === "terminal" ? "seg-btn seg-on" : "seg-btn"} onClick={() => setPane("terminal")}>{t("chat.term")}</button>
+      <div className="px-4 pb-2 md:px-8">
+        {!agent.available ? <p className="mb-2 text-xs text-mute">{t("a.cliMissing")}</p> : !cwd ? <p className="mb-2 text-xs text-mute">{t("a.noCwd")}</p> : null}
+        <div className="composer">
+          <textarea
+            ref={area}
+            rows={1}
+            value={draft}
+            disabled={!canSend}
+            placeholder={t("a.chatPh", { name: agent.name })}
+            data-testid="composer"
+            onChange={(event) => { setDraft(event.target.value); autosize(); }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void send(); }
+            }}
+          />
+          {running ? (
+            <button type="button" className="send-btn send-stop" aria-label={t("a.stop")} data-testid="stop" onClick={() => abortRef.current?.abort()}><Square size={14} fill="currentColor" /></button>
+          ) : (
+            <button type="button" className="send-btn" aria-label={t("a.send")} data-testid="send" disabled={!draft.trim() || !canSend} onClick={() => void send()}><ArrowUp size={18} strokeWidth={2.5} /></button>
+          )}
+        </div>
       </div>
-      <div ref={scroller} data-testid="agent-output" className="app-scroll mt-3 min-h-0 flex-1 overflow-y-auto pb-3">
-        {pane === "chat" ? (
-          <div className="space-y-4">
-            {messages.length === 0 ? <EmptyState text={t("chat.empty")} /> : null}
-            {messages.map((message) => <MessageView key={message.id} message={message} name={provider.meta.name} />)}
-            {live ? <LiveView live={live} name={provider.meta.name} /> : null}
-          </div>
-        ) : (
-          <div>
-            <p className="mb-2 text-xs text-mute">{data.settings.demoMode ? t("term.note") : (data.settings.workspacePath || project?.path)}</p>
-            <div className="terminal">{lines.join("\n") || `${provider.meta.cli}\n`}</div>
-            <form className="mt-3 flex gap-2" onSubmit={(event) => { event.preventDefault(); void runCommand(); }}>
-              <input value={command} onChange={(event) => setCommand(event.target.value)} placeholder={t("term.ph")} className="field h-11 flex-1" />
-              <Button type="submit" size="sm">{t("term.run")}</Button>
-            </form>
-          </div>
-        )}
-      </div>
-      {pane === "chat" ? (
-        <form className="pb-3" onSubmit={(event) => { event.preventDefault(); void send(draft); }}>
-          <div className="mb-2 flex gap-2 overflow-x-auto">
-            {ideas(provider.meta.id).map((idea) => (
-              <button key={idea} type="button" className="chip" onClick={() => setDraft(idea)}>
-                {idea}
-              </button>
-            ))}
-          </div>
-          <Textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t("chat.placeholder")} rows={2} />
-          <div className="mt-2 flex justify-end gap-2">
-            {running ? <Button type="button" variant="danger" size="sm" onClick={() => abortRef.current?.abort()}>{t("chat.abort")}</Button> : null}
-            <Button type="button" variant="soft" size="sm" onClick={() => void api.enqueue(session.id, draft).then((next) => { replace(next); setDraft(""); })}>{t("chat.queue")}</Button>
-            <Button type="submit" size="sm" disabled={running || !draft.trim()}>{t("chat.send")}</Button>
-          </div>
-        </form>
-      ) : null}
-      <NewSession open={creating} onOpenChange={setCreating} providerId={provider.meta.id} />
     </div>
   );
 }
 
-function EmptyChat() {
-  const { t, data } = useApp();
-  const [open, setOpen] = useState(true);
-  const providerId = data?.settings.activeProviderId ?? "cursor";
-  return (
-    <div className="px-4 pt-8 md:px-8">
-      <p className="text-mute">{t("chat.empty")}</p>
-      <NewSession open={open} onOpenChange={setOpen} providerId={providerId} />
-    </div>
-  );
-}
-
-function NewSession({ open, onOpenChange, providerId }: { open: boolean; onOpenChange: (open: boolean) => void; providerId: string }) {
-  const { data, t, replace } = useApp();
-  const navigate = useNavigate();
-  const projects = data?.projects.filter((project) => project.providerId === providerId) ?? [];
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
-  return (
-    <Modal open={open} onOpenChange={onOpenChange} title={t("chat.new")}>
-      {projects.length === 0 ? <p className="text-sm text-mute">{t("chat.noProject")}</p> : (
-        <form onSubmit={(event) => {
-          event.preventDefault();
-          void api.createSession(providerId, projectId).then((result) => {
-            replace(result.bootstrap);
-            onOpenChange(false);
-            navigate(`/chat/${result.session.id}`);
-          });
-        }}>
-          <label className="text-xs text-mute">{t("chat.pick")}</label>
-          <select className="field mt-2" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-          </select>
-          <div className="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-            <Button type="submit">{t("chat.create")}</Button>
-          </div>
-        </form>
-      )}
-    </Modal>
-  );
-}
-
-function MessageView({ message, name }: { message: ChatMessage; name: string }) {
+function Bubble({ message }: { message: UiMessage }) {
   const { t } = useApp();
   if (message.role === "user") {
-    const text = message.blocks.find((block) => block.type === "text");
     return (
       <div className="user-bubble">
-        <div className="mb-1 text-[11px] text-mute">{t("chat.you")}</div>
-        <p className="whitespace-pre-wrap text-sm">{text && text.type === "text" ? text.text : ""}</p>
+        {message.blocks.map((block, i) => (block.type === "text" ? <RichText key={i} text={block.text} /> : null))}
       </div>
     );
   }
   return (
-    <article>
-      <div className="mb-2 text-xs text-mute">{t("chat.received")} · {name}</div>
-      <div className="space-y-2">
-        {message.blocks.map((block, index) => {
-          if (block.type === "thinking") return <p key={index} className="text-xs text-mute">{t("chat.thinking")} · {block.text}</p>;
-          if (block.type === "tool") return <div key={index} className="tool-row"><span className="text-accent">{block.name}</span><span className="truncate text-mute">{block.detail}</span></div>;
-          return <RichText key={index} text={block.text} />;
-        })}
-      </div>
-    </article>
-  );
-}
-
-interface Live {
-  thinking: string;
-  text: string;
-  tools: { name: string; detail: string }[];
-}
-
-function applyEvent(current: Live | null, event: StreamEvent): Live {
-  const next = current ?? { thinking: "", text: "", tools: [] };
-  if (event.type === "thinking") return { ...next, thinking: next.thinking + event.delta };
-  if (event.type === "text") return { ...next, text: next.text + event.delta };
-  if (event.type === "error") return { ...next, text: next.text ? `${next.text}\n${event.message}` : event.message };
-  if (event.type === "tool" && event.phase === "done") return { ...next, tools: [...next.tools, { name: event.name, detail: event.detail }] };
-  return next;
-}
-
-function LiveView({ live, name }: { live: Live; name: string }) {
-  const { t } = useApp();
-  return (
-    <article data-testid="live-output">
-      <div className="mb-2 text-xs text-accent">{t("chat.receiving")} · {name}</div>
-      {live.thinking ? <p className="text-xs text-mute">{t("chat.thinking")} · {live.thinking}</p> : null}
-      <div className="mt-2 space-y-2">
-        {live.tools.map((tool, index) => <div key={index} className="tool-row"><span className="text-accent">{tool.name}</span><span className="text-mute">{tool.detail}</span></div>)}
-      </div>
-      {live.text ? <div className="mt-2"><RichText text={live.text} /></div> : null}
-    </article>
+    <div className={`assistant-msg ${message.error ? "assistant-error" : ""}`}>
+      {message.blocks.map((block, i) => {
+        if (block.type === "text") return <RichText key={i} text={block.text} />;
+        if (block.type === "thinking") return <details key={i} className="thinking"><summary>{t("a.thinking")}</summary><p className="whitespace-pre-wrap">{block.text}</p></details>;
+        return (
+          <div key={i} className="tool-row">
+            <span className={`dot ${block.status === "running" ? "dot-run" : block.status === "error" ? "dot-off" : "dot-ok"}`} />
+            <span className="font-medium">{block.name}</span>
+            <span className="min-w-0 flex-1 truncate text-mute">{block.detail}</span>
+          </div>
+        );
+      })}
+    </div>
   );
 }

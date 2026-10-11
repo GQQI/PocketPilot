@@ -125,6 +125,7 @@ export type StreamEvent =
   | { type: "thinking"; delta: string }
   | { type: "tool"; phase: "start" | "done"; name: string; detail: string }
   | { type: "usage"; input: number; output: number }
+  | { type: "session"; id: string }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -216,4 +217,104 @@ export interface Bootstrap {
 export interface SessionCreated {
   session: Session;
   bootstrap: Bootstrap;
+}
+
+/* ---- real local agent platforms (detected on the host PC) ---- */
+
+export interface AgentAuth {
+  state: "ok" | "missing" | "unknown";
+  /** where the credential comes from: env | file | login | settings | cli | none (never the secret itself) */
+  source: string;
+  note: string;
+}
+
+export interface AgentStatus {
+  id: string;
+  name: string;
+  vendor: string;
+  monogram: string;
+  accent: string;
+  cli: string;
+  /** CLI executable found on this PC */
+  installed: boolean;
+  cliPath: string | null;
+  version: string | null;
+  /** local session history found on this PC */
+  hasHistory: boolean;
+  /** installed or has history */
+  detected: boolean;
+  /** can actually run a prompt (CLI found) */
+  available: boolean;
+  auth: AgentAuth;
+  defaultModel: string;
+  models: string[];
+  sessionCount: number;
+  projectCount: number;
+  canListSessions: boolean;
+  keySource: KeySource;
+  envKeys: string[];
+  docsUrl: string;
+  /** where this platform's local data was read from */
+  dataPath: string;
+  configuredCliPath: string;
+  checkedAt: string;
+}
+
+export interface AgentsOverview {
+  agents: AgentStatus[];
+  detected: number;
+  available: number;
+  total: number;
+}
+
+export interface AgentProject {
+  path: string;
+  name: string;
+  sessions: number;
+  updatedAt: string;
+  exists: boolean;
+}
+
+export interface AgentSession {
+  id: string;
+  agentId: string;
+  title: string;
+  projectPath: string;
+  projectName: string;
+  updatedAt: string;
+  /** -1 = not counted for this entry */
+  messageCount: number;
+  preview: string;
+  source: string;
+}
+
+export interface UsageBucket {
+  inputTokens: number;
+  outputTokens: number;
+  cacheTokens: number;
+  requests: number;
+  costUsd: number | null;
+}
+
+export interface AgentUsage {
+  supported: boolean;
+  /** why not supported / what is missing */
+  reason: string;
+  source: string;
+  /** token counts exist (false = only request counts) */
+  hasTokens: boolean;
+  today: UsageBucket | null;
+  week: UsageBucket | null;
+  month: UsageBucket | null;
+  costEstimated: boolean;
+  models: string[];
+  note: string;
+  computedAt: string;
+}
+
+export interface AgentChatRequest {
+  sessionId?: string;
+  cwd: string;
+  prompt: string;
+  model?: string;
 }
