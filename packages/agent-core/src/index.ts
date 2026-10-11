@@ -5,3 +5,6 @@ export type { AgentAdapter, DeviceRecord, HubOptions, PairContext } from "./hub"
 export { applyLegacyEnv, resolveDefaultDataDir } from "./compat";
 export { resolveInside } from "./paths";
 export { buildPlan } from "./text";
+export { LocalAgents } from "./local";
+export type { AgentCtx } from "./local";
+export { listHostDirectory } from "./browse";

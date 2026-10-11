@@ -1,131 +1,85 @@
-import type { FileContent, FileEntry } from "@pocketpilot/protocol";
+import { ChevronRight, FolderOpen, FolderSearch, Plus } from "lucide-react";
+import type { AgentProject } from "@pocketpilot/protocol";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
-import { Button, Input, EmptyState } from "@/components/ui";
+import { useNavigate, useSearchParams } from "react-router";
+import { AgentPicker } from "@/components/agent-picker";
+import { DirectoryPicker } from "@/components/directory-picker";
+import { Button, EmptyState } from "@/components/ui";
 import { api } from "@/lib/api";
+import { formatTime } from "@/lib/format";
 import { useApp } from "@/lib/store";
+import { SessionRow, useSessions } from "./home";
 
+/** "项目" tab: folders this platform has really opened on the PC. */
 export function ProjectsPage() {
-  const { data, t } = useApp();
+  const { agent, t } = useApp();
   const navigate = useNavigate();
-  const [all, setAll] = useState(false);
-  if (!data) return null;
-  const active = data.settings.activeProviderId;
-  const projects = all ? data.projects : data.projects.filter((project) => project.providerId === active);
+  const [rows, setRows] = useState<AgentProject[] | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [query, setQuery] = useState("");
+  const [limit, setLimit] = useState(40);
+
+  useEffect(() => {
+    if (!agent) return;
+    let cancelled = false;
+    setRows(null);
+    void api.agentProjects(agent.id).then((next) => { if (!cancelled) setRows(next); }).catch(() => { if (!cancelled) setRows([]); });
+    return () => { cancelled = true; };
+  }, [agent?.id]);
+
+  if (!agent) return <div className="px-4 pt-8 text-mute md:px-8">{t("a.none")}</div>;
+  const shown = (rows ?? []).filter((p) => !query.trim() || `${p.name} ${p.path}`.toLowerCase().includes(query.trim().toLowerCase()));
   return (
-    <div data-testid="projects" className="app-scroll h-full overflow-y-auto px-4 pb-6 md:px-8">
-      <div className="flex items-end justify-between gap-3">
-        <h1 className="display text-4xl">{t("projects.title")}</h1>
-        <button type="button" className="text-sm text-accent" onClick={() => setAll((value) => !value)}>
-          {all ? t("projects.mine") : t("projects.all")}
-        </button>
-      </div>
-      <div className="mt-5 space-y-3">
-        {projects.length === 0 ? <EmptyState text={t("projects.empty")} /> : null}
-        {projects.map((project) => {
-          const provider = data.providers.find((item) => item.meta.id === project.providerId);
-          return (
-            <button key={project.id} type="button" className="row-card block w-full px-4 py-4 text-left" onClick={() => navigate(`/projects/${project.id}`)}>
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium">{project.name}</span>
-                <span className="text-xs text-mute">{provider?.meta.name}</span>
+    <div className="app-scroll h-full overflow-y-auto px-4 pb-8 md:px-8" data-testid="projects">
+      <h1 className="display !p-0 text-3xl">{t("a.projects")}</h1>
+      <p className="mt-1 text-sm text-mute">{t("a.projectsHelp")}</p>
+      <div className="mt-3"><AgentPicker /></div>
+      <input className="input mt-3" value={query} placeholder={t("a.search")} onChange={(event) => setQuery(event.target.value)} />
+      <Button className="mt-3 w-full" variant="soft" disabled={!agent.available} onClick={() => setPicking(true)}><FolderSearch size={18} />{t("a.pickOther")}</Button>
+      <div className="mt-3 space-y-2">
+        {rows === null ? <p className="text-sm text-mute">{t("common.loading")}</p> : null}
+        {rows && shown.length === 0 ? <EmptyState text={t("a.recentEmpty")} icon={FolderOpen} /> : null}
+        {shown.slice(0, limit).map((project) => (
+          <button key={project.path} type="button" className="row-card flex w-full items-center gap-3 p-3 text-left" onClick={() => navigate(`/projects/view?path=${encodeURIComponent(project.path)}`)}>
+            <span className="empty-icon !h-10 !w-10 shrink-0"><FolderOpen size={18} /></span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium">{project.name}</div>
+              <div className="truncate text-xs text-mute">{project.path}</div>
+              <div className="mt-0.5 text-xs text-mute">
+                {project.sessions > 0 ? `${t("a.projectSessions", { n: project.sessions })} · ${formatTime(project.updatedAt, t)}` : t("a.projectNone")}
+                {project.exists ? "" : ` · ${t("a.projectGone")}`}
               </div>
-              <p className="mt-1 text-sm text-mute">{project.summary}</p>
-              <p className="mt-2 text-xs text-mute">{project.branch || "—"} · {project.changes.length} · {t("projects.stats", { files: project.stats.files, loc: project.stats.loc })}</p>
-            </button>
-          );
-        })}
+            </div>
+            <ChevronRight size={18} className="shrink-0 text-mute" />
+          </button>
+        ))}
       </div>
+      {rows && shown.length > limit ? <Button className="mt-4 w-full" variant="soft" onClick={() => setLimit(limit + 40)}>{t("a.more")}</Button> : null}
+      <DirectoryPicker open={picking} onOpenChange={setPicking} onPick={(path) => navigate(`/projects/view?path=${encodeURIComponent(path)}`)} />
     </div>
   );
 }
 
+/** One project: its real sessions on this platform, plus "new chat here". */
 export function ProjectPage() {
-  const { projectId = "" } = useParams();
-  const { data, t, replace, setNotice } = useApp();
+  const { agent, t } = useApp();
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
-  const dir = params.get("dir") ?? "";
-  const selected = params.get("file");
-  const [entries, setEntries] = useState<FileEntry[]>([]);
-  const [file, setFile] = useState<FileContent | null>(null);
-  const [message, setMessage] = useState("");
-  const project = data?.projects.find((item) => item.id === projectId);
-
-  useEffect(() => {
-    void api.files(projectId, dir).then(setEntries).catch(() => setEntries([]));
-  }, [projectId, dir]);
-
-  useEffect(() => {
-    if (!selected) {
-      setFile(null);
-      return;
-    }
-    void api.file(projectId, selected).then(setFile).catch(() => setFile(null));
-  }, [projectId, selected]);
-
-  if (!data || !project) return <div className="px-4 pt-8 text-mute">{t("projects.empty")}</div>;
-
+  const [params] = useSearchParams();
+  const path = params.get("path") ?? "";
+  const { rows } = useSessions(agent?.id, path, 60);
+  if (!agent) return null;
+  const name = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? path;
   return (
-    <div className="app-scroll h-full overflow-y-auto px-4 pb-6 md:px-8">
-      <button type="button" className="text-sm text-mute" onClick={() => navigate("/projects")}>{t("projects.back")}</button>
-      <h1 className="display mt-2 text-4xl">{project.name}</h1>
-      <p className="mt-2 text-sm text-mute">{project.path}</p>
-      <p className="mt-1 text-sm text-mute">{project.branch} · {t("projects.stats", { files: project.stats.files, loc: project.stats.loc })}</p>
-
-      <section className="panel mt-4 p-4">
-        <h2 className="text-sm text-mute">{t("projects.changes")}</h2>
-        {project.changes.length === 0 ? <p className="mt-2 text-sm">{t("projects.clean")}</p> : (
-          <ul className="mt-2 space-y-1 text-sm">
-            {project.changes.map((change) => <li key={change.path}><span className="text-accent">{change.status}</span> {change.path}</li>)}
-          </ul>
-        )}
-        {data.settings.demoMode && project.changes.length > 0 ? (
-          <form className="mt-3 flex gap-2" onSubmit={(event) => {
-            event.preventDefault();
-            void api.commit(project.id, message).then((next) => {
-              replace(next);
-              setMessage("");
-              setNotice(t("shell.noticeCommit"));
-            });
-          }}>
-            <Input value={message} onChange={(event) => setMessage(event.target.value)} placeholder={t("projects.commitPh")} />
-            <Button type="submit" size="sm">{t("projects.commit")}</Button>
-          </form>
-        ) : null}
-      </section>
-
-      <div className="mt-4 grid gap-3 lg:grid-cols-[240px_1fr]">
-        <section className="panel p-3">
-          <div className="mb-2 flex items-center justify-between text-xs text-mute">
-            <span>{t("projects.files")}</span>
-            {dir ? <button type="button" onClick={() => setParams(dir.includes("/") ? { dir: dir.slice(0, dir.lastIndexOf("/")) } : {})}>{t("projects.back")}</button> : null}
-          </div>
-          <ul className="space-y-1">
-            {entries.map((entry) => (
-              <li key={entry.path}>
-                <button
-                  type="button"
-                  className="w-full truncate rounded-xl px-2 py-2 text-left text-sm hover:bg-soft"
-                  onClick={() => {
-                    if (entry.kind === "dir") setParams({ dir: entry.path });
-                    else setParams(dir ? { dir, file: entry.path } : { file: entry.path });
-                  }}
-                >
-                  {entry.kind === "dir" ? "▸ " : ""}{entry.name}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-        <section className="panel min-h-48 p-4">
-          {file ? (
-            <>
-              <div className="mb-2 text-xs text-mute">{file.path}</div>
-              <pre className="code-block whitespace-pre-wrap">{file.content}</pre>
-            </>
-          ) : <p className="text-sm text-mute">{project.summary}</p>}
-        </section>
+    <div className="app-scroll h-full overflow-y-auto px-4 pb-8 md:px-8" data-testid="project">
+      <h1 className="display !p-0 text-3xl">{name}</h1>
+      <p className="mt-1 break-all text-xs text-mute">{path}</p>
+      <Button className="mt-4 w-full" disabled={!agent.available} onClick={() => navigate(`/chat/${agent.id}/new?cwd=${encodeURIComponent(path)}`)}><Plus size={18} />{t("a.startHere")}</Button>
+      {!agent.available ? <p className="mt-2 text-sm text-mute">{t("a.cliMissing")}</p> : null}
+      <h2 className="mt-6 text-mute">{t("a.sessionsIn")}</h2>
+      <div className="mt-2 space-y-2">
+        {rows === null ? <p className="text-sm text-mute">{t("common.loading")}</p> : null}
+        {rows?.length === 0 ? <EmptyState text={t("a.projectNone")} /> : null}
+        {rows?.map((session) => <SessionRow key={session.id} session={session} onOpen={() => navigate(`/chat/${agent.id}/${session.id}`)} />)}
       </div>
     </div>
   );

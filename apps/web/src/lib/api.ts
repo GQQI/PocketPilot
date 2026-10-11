@@ -1,4 +1,4 @@
-import type { Bootstrap, ChatMessage, DeviceView, FileContent, FileEntry, FsListing, HostView, PairResult, SessionCreated, StreamEvent, TerminalEvent } from "@pocketpilot/protocol";
+import type { AgentChatRequest, AgentProject, AgentSession, AgentsOverview, AgentStatus, AgentUsage, Bootstrap, ChatMessage, DeviceView, FsListing, HostView, PairResult, StreamEvent } from "@pocketpilot/protocol";
 
 import { Capacitor } from "@capacitor/core";
 import { migrateLegacyStorage } from "./legacy";
@@ -98,27 +98,16 @@ export const api = {
     writeStore(TOKEN_KEY, "");
   },
   saveSettings: (patch: unknown) => request<Bootstrap>("/api/settings", json(patch)),
-  setSecret: (id: string, apiKey: string) => request<Bootstrap>(`/api/providers/${id}/secret`, json({ apiKey })),
-  clearSecret: (id: string) => request<Bootstrap>(`/api/providers/${id}/secret`, { method: "DELETE" }),
-  probeAll: () => request<Bootstrap>("/api/probe", { method: "POST" }),
-  resetDemo: () => request<Bootstrap>("/api/demo/reset", { method: "POST" }),
-  createSession: (providerId: string, projectId: string, title?: string) =>
-    request<SessionCreated>("/api/sessions", json({ providerId, projectId, title })),
-  messages: (sessionId: string) => request<ChatMessage[]>(`/api/sessions/${sessionId}/messages`),
-  files: (projectId: string, dir: string) => request<FileEntry[]>(`/api/projects/${projectId}/files?path=${encodeURIComponent(dir)}`),
-  file: (projectId: string, filePath: string) => request<FileContent>(`/api/projects/${projectId}/file?path=${encodeURIComponent(filePath)}`),
-  commit: (projectId: string, message: string) => request<Bootstrap>(`/api/projects/${projectId}/commit`, json({ message })),
-  enqueue: (sessionId: string, prompt: string) => request<Bootstrap>("/api/queue", json({ sessionId, prompt })),
-  removeQueue: (id: string) => request<Bootstrap>(`/api/queue/${id}`, { method: "DELETE" }),
-  reorderQueue: (ids: string[]) => request<Bootstrap>("/api/queue/reorder", json({ ids })),
-  toggleMcp: (providerId: string, mcpId: string, enabled: boolean) =>
-    request<Bootstrap>(`/api/providers/${providerId}/mcp/${mcpId}`, json({ enabled })),
-  prompt: (sessionId: string, prompt: string, onEvent: (event: StreamEvent) => void, signal: AbortSignal) =>
-    stream(`/api/sessions/${sessionId}/prompt`, { prompt }, onEvent, signal),
-  terminal: (sessionId: string, command: string, onEvent: (event: TerminalEvent) => void, signal: AbortSignal) =>
-    stream(`/api/sessions/${sessionId}/terminal`, { command }, onEvent, signal),
-  runQueue: (id: string, onEvent: (event: StreamEvent) => void, signal: AbortSignal) =>
-    stream(`/api/queue/${id}/run`, {}, onEvent, signal),
+  agents: (refresh = false) => request<AgentsOverview>(`/api/agents${refresh ? "?refresh=1" : ""}`),
+  agentProjects: (id: string) => request<AgentProject[]>(`/api/agents/${id}/projects`),
+  agentSessions: (id: string, project: string | undefined, limit: number) =>
+    request<AgentSession[]>(`/api/agents/${id}/sessions?limit=${limit}${project ? `&project=${encodeURIComponent(project)}` : ""}`),
+  agentMessages: (id: string, sid: string, limit: number) => request<ChatMessage[]>(`/api/agents/${id}/sessions/${encodeURIComponent(sid)}/messages?limit=${limit}`),
+  agentUsage: (id: string, refresh = false) => request<AgentUsage>(`/api/agents/${id}/usage${refresh ? "?refresh=1" : ""}`),
+  agentConfig: (id: string, patch: { cliPath?: string; model?: string; apiKey?: string }) => request<AgentStatus>(`/api/agents/${id}/config`, json(patch)),
+  agentChat: (id: string, req: AgentChatRequest, onEvent: (event: StreamEvent) => void, signal: AbortSignal) =>
+    stream(`/api/agents/${id}/chat`, req, onEvent, signal),
+  hostFs: (dir: string) => request<FsListing>(`/api/host/fs?path=${encodeURIComponent(dir)}`),
 };
 
 export function deviceName(): string {

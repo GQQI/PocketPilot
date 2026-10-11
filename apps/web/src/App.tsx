@@ -6,7 +6,6 @@ import { AppProvider } from "@/lib/store";
 import { ChatIndex, ChatPage } from "@/pages/chat";
 import { HomePage } from "@/pages/home";
 import { ProjectPage, ProjectsPage } from "@/pages/projects";
-import { QueuePage } from "@/pages/queue";
 import { SettingsPage } from "@/pages/settings";
 
 /** `/#pair=<sid>.<secret>` comes from the desktop QR code. The fragment is never sent to any server. */
@@ -33,10 +32,9 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/chat" element={<ChatIndex />} />
-            <Route path="/chat/:sessionId" element={<ChatPage />} />
+            <Route path="/chat/:agent/:sid" element={<ChatPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
-            <Route path="/projects/:projectId" element={<ProjectPage />} />
-            <Route path="/queue" element={<QueuePage />} />
+            <Route path="/projects/view" element={<ProjectPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </Shell>
