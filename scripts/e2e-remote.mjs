@@ -8,13 +8,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { RTCPeerConnection } from "node-datachannel/polyfill";
-import { DEFAULT_BROKERS, MqttBus, RemoteClient } from "@mobileagent/remote";
+import { DEFAULT_BROKERS, MqttBus, RemoteClient } from "@pocketpilot/remote";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = 47299;
 const host = spawn(process.execPath, [path.join(root, "apps/bridge/dist/server.cjs")], {
   cwd: root,
-  env: { ...process.env, MOBILEAGENT_RTC: "1", MOBILEAGENT_REMOTE: "1", MOBILEAGENT_PORT: String(port), HOST: "127.0.0.1", MOBILEAGENT_HOME: mkdtempSync(path.join(tmpdir(), "ma-e2e-")), MOBILEAGENT_STATIC: path.join(root, "apps/web/dist") },
+  env: { ...process.env, POCKETPILOT_RTC: "1", POCKETPILOT_REMOTE: "1", POCKETPILOT_PORT: String(port), HOST: "127.0.0.1", POCKETPILOT_HOME: mkdtempSync(path.join(tmpdir(), "ma-e2e-")), POCKETPILOT_STATIC: path.join(root, "apps/web/dist") },
 });
 let out = "";
 const pairUrl = new Promise((resolve, reject) => {
@@ -27,7 +27,7 @@ let code = 1;
 try {
   const { sid, secret } = await pairUrl;
   step("host up, pairing link parsed");
-  const stunEnv = process.env.MOBILEAGENT_STUN?.split(",").map((s) => s.trim()).filter(Boolean);
+  const stunEnv = process.env.POCKETPILOT_STUN?.split(",").map((s) => s.trim()).filter(Boolean);
   const opts = { iceServers: stunEnv, RTC: RTCPeerConnection, createBus: () => new MqttBus(DEFAULT_BROKERS, () => undefined), log: (m) => step("client: " + m) };
   const c1 = new RemoteClient({ kind: "pair", sid, secret }, opts);
   const welcome = await c1.pair("e2e-phone");

@@ -11,12 +11,12 @@ import type {
   QueueItem,
   Session,
   TerminalEvent,
-} from "@mobileagent/protocol";
+} from "@pocketpilot/protocol";
 import { launchArgs, type CatalogEntry } from "./catalog";
 import { HubError } from "./errors";
 import { resolveInside } from "./paths";
 
-const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".mobileagent"]);
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".pocketpilot", ".mobileagent"]);
 const SKIP_FILES = new Set([".env", ".env.local", "secrets.json"]);
 
 export interface LiveSnapshot {
@@ -123,7 +123,7 @@ export class LiveEngine {
     return session;
   }
 
-  async *prompt(sessionId: string, prompt: string, signal: AbortSignal): AsyncGenerator<import("@mobileagent/protocol").StreamEvent> {
+  async *prompt(sessionId: string, prompt: string, signal: AbortSignal): AsyncGenerator<import("@pocketpilot/protocol").StreamEvent> {
     const text = prompt.trim();
     if (!text) throw new HubError("empty prompt", 400, "empty");
     const session = this.requireSession(sessionId);

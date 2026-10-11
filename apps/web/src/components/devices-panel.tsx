@@ -1,4 +1,4 @@
-import type { DeviceView } from "@mobileagent/protocol";
+import type { DeviceView } from "@pocketpilot/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui";
 import { api } from "@/lib/api";

@@ -1,4 +1,4 @@
-import type { BuiltinProviderId, HealthState, ProviderMeta } from "@mobileagent/protocol";
+import type { BuiltinProviderId, HealthState, ProviderMeta } from "@pocketpilot/protocol";
 
 export interface CatalogEntry extends ProviderMeta {
   id: BuiltinProviderId;
@@ -9,7 +9,7 @@ export interface CatalogEntry extends ProviderMeta {
  * Built-in roster.
  * CloudCLI's open-source provider registry (siteboon/claudecodeui) currently
  * ships claude, codex, cursor, and opencode. The hosted CloudCLI docs also
- * list Gemini CLI. DeepSeek Harness is MobileAgent's additional adapter.
+ * list Gemini CLI. DeepSeek Harness is PocketPilot's additional adapter.
  * VS Code is intentionally not a provider.
  */
 export const CATALOG: CatalogEntry[] = [

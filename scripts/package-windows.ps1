@@ -1,4 +1,4 @@
-# Build the Windows installer from a checkout at D:\Project\MobileAgent
+# Build the Windows installer from a checkout at D:\Project\AgentFrame
 # (or any other folder). Run in PowerShell from the repo root:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
 

@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { hostname, homedir } from "node:os";
+import { hostname } from "node:os";
 import path from "node:path";
 import type {
   Bootstrap,
@@ -21,11 +21,12 @@ import type {
   Settings,
   StreamEvent,
   TerminalEvent,
-} from "@mobileagent/protocol";
+} from "@pocketpilot/protocol";
 import { listDemoDirectory, listHostDirectory } from "./browse";
 import { CATALOG, type CatalogEntry } from "./catalog";
 import { DemoEngine } from "./demo-engine";
 import { HubError } from "./errors";
+import { applyLegacyEnv, resolveDefaultDataDir } from "./compat";
 import { LiveEngine, type LiveSnapshot } from "./live-engine";
 import type { DemoSnapshot } from "./seed";
 
@@ -48,9 +49,9 @@ export interface AgentAdapter {
 export interface HubOptions {
   dataDir?: string;
   fast?: boolean;
-  /** Remote mode: no loopback trust, pairing code never exposed over HTTP, code rotates after each pairing. Defaults to MOBILEAGENT_REMOTE=1. */
+  /** Remote mode: no loopback trust, pairing code never exposed over HTTP, code rotates after each pairing. Defaults to POCKETPILOT_REMOTE=1. */
   remote?: boolean;
-  /** Device token lifetime in days. Defaults to MOBILEAGENT_TOKEN_TTL_DAYS or 90. */
+  /** Device token lifetime in days. Defaults to POCKETPILOT_TOKEN_TTL_DAYS or 90. */
   tokenTtlDays?: number;
   onPairingCodeChange?: (code: string) => void;
   /** Called after devices are added or revoked (remote transport re-subscribes / drops connections). */
@@ -134,10 +135,11 @@ export class Hub {
   private lastSeenSaved = 0;
 
   constructor(options: HubOptions = {}) {
-    this.dataDir = options.dataDir ?? process.env.MOBILEAGENT_HOME ?? path.join(homedir(), ".mobileagent");
+    applyLegacyEnv();
+    this.dataDir = options.dataDir ?? process.env.POCKETPILOT_HOME ?? resolveDefaultDataDir();
     this.fast = options.fast ?? false;
-    this.remote = options.remote ?? process.env.MOBILEAGENT_REMOTE === "1";
-    const ttlDays = options.tokenTtlDays ?? Number(process.env.MOBILEAGENT_TOKEN_TTL_DAYS ?? DEFAULT_TOKEN_TTL_DAYS);
+    this.remote = options.remote ?? process.env.POCKETPILOT_REMOTE === "1";
+    const ttlDays = options.tokenTtlDays ?? Number(process.env.POCKETPILOT_TOKEN_TTL_DAYS ?? DEFAULT_TOKEN_TTL_DAYS);
     this.tokenTtlMs = (Number.isFinite(ttlDays) && ttlDays > 0 ? ttlDays : DEFAULT_TOKEN_TTL_DAYS) * 86_400_000;
     this.onCode = options.onPairingCodeChange;
     this.onDevices = options.onDevicesChange;

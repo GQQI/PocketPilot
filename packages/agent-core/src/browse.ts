@@ -1,24 +1,24 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import type { FsEntry, FsListing } from "@mobileagent/protocol";
+import type { FsEntry, FsListing } from "@pocketpilot/protocol";
 import { HubError } from "./errors";
 
-const SKIP = new Set(["node_modules", ".git", "dist", ".mobileagent", "secrets.json", ".env", ".env.local"]);
+const SKIP = new Set(["node_modules", ".git", "dist", ".pocketpilot", ".mobileagent", "secrets.json", ".env", ".env.local"]);
 
 const DEMO: Record<string, FsEntry[]> = {
   "": [{ name: "D:\\", path: "D:\\", kind: "dir" }],
   "D:\\": [{ name: "Project", path: "D:\\Project", kind: "dir" }],
   "D:\\Project": [
-    { name: "MobileAgent", path: "D:\\Project\\MobileAgent", kind: "dir" },
+    { name: "PocketPilot", path: "D:\\Project\\AgentFrame", kind: "dir" },
     { name: "harbor-ledger", path: "D:\\Project\\harbor-ledger", kind: "dir" },
     { name: "northwind-mobile", path: "D:\\Project\\northwind-mobile", kind: "dir" },
     { name: "atlas-ingest", path: "D:\\Project\\atlas-ingest", kind: "dir" },
   ],
-  "D:\\Project\\MobileAgent": [
-    { name: "apps", path: "D:\\Project\\MobileAgent\\apps", kind: "dir" },
-    { name: "packages", path: "D:\\Project\\MobileAgent\\packages", kind: "dir" },
-    { name: "README.md", path: "D:\\Project\\MobileAgent\\README.md", kind: "file" },
+  "D:\\Project\\AgentFrame": [
+    { name: "apps", path: "D:\\Project\\AgentFrame\\apps", kind: "dir" },
+    { name: "packages", path: "D:\\Project\\AgentFrame\\packages", kind: "dir" },
+    { name: "README.md", path: "D:\\Project\\AgentFrame\\README.md", kind: "file" },
   ],
   "D:\\Project\\harbor-ledger": [
     { name: "src", path: "D:\\Project\\harbor-ledger\\src", kind: "dir" },

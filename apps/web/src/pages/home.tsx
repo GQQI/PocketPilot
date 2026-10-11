@@ -1,4 +1,4 @@
-import type { HealthState, HostView } from "@mobileagent/protocol";
+import type { HealthState, HostView } from "@pocketpilot/protocol";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { DirectoryPicker } from "@/components/directory-picker";

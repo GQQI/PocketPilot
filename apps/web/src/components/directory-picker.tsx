@@ -1,4 +1,4 @@
-import type { FsListing } from "@mobileagent/protocol";
+import type { FsListing } from "@pocketpilot/protocol";
 import { useEffect, useState } from "react";
 import { Button, Modal } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";

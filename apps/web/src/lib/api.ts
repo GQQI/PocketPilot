@@ -1,9 +1,13 @@
-import type { Bootstrap, ChatMessage, DeviceView, FileContent, FileEntry, FsListing, HostView, PairResult, SessionCreated, StreamEvent, TerminalEvent } from "@mobileagent/protocol";
+import type { Bootstrap, ChatMessage, DeviceView, FileContent, FileEntry, FsListing, HostView, PairResult, SessionCreated, StreamEvent, TerminalEvent } from "@pocketpilot/protocol";
 
+import { Capacitor } from "@capacitor/core";
+import { migrateLegacyStorage } from "./legacy";
 import { forgetRtc, rtcConfigured, rtcFetch } from "./rtc";
 
-const BRIDGE_KEY = "mobileagent.bridge";
-const TOKEN_KEY = "mobileagent.token";
+migrateLegacyStorage();
+
+const BRIDGE_KEY = "pocketpilot.bridge";
+const TOKEN_KEY = "pocketpilot.token";
 
 function readStore(key: string): string {
   try {
@@ -34,7 +38,12 @@ function authHeaders(): HeadersInit {
 
 /** Uses the encrypted WebRTC tunnel when this phone was paired by QR, otherwise plain HTTP to the LAN bridge. */
 function transport(path: string, init?: RequestInit): Promise<Response> {
-  return rtcConfigured() ? rtcFetch(path, init) : fetch(resolve(path), init);
+  if (rtcConfigured()) return rtcFetch(path, init);
+  // The Capacitor app has no host of its own: until a PC is paired, there is nothing to call.
+  if (Capacitor.isNativePlatform() && !readStore(BRIDGE_KEY)) {
+    return Promise.resolve(new Response(JSON.stringify({ error: "pairing required", code: "pair" }), { status: 401, headers: { "content-type": "application/json" } }));
+  }
+  return fetch(resolve(path), init);
 }
 
 export class ApiError extends Error {

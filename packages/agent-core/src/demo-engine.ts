@@ -8,7 +8,7 @@ import type {
   QueueItem,
   Session,
   TerminalEvent,
-} from "@mobileagent/protocol";
+} from "@pocketpilot/protocol";
 import type { CatalogEntry } from "./catalog";
 import { HubError } from "./errors";
 import {
@@ -136,7 +136,7 @@ export class DemoEngine {
     return session;
   }
 
-  async *prompt(sessionId: string, prompt: string, signal: AbortSignal): AsyncGenerator<import("@mobileagent/protocol").StreamEvent> {
+  async *prompt(sessionId: string, prompt: string, signal: AbortSignal): AsyncGenerator<import("@pocketpilot/protocol").StreamEvent> {
     const text = prompt.trim();
     if (!text) throw new HubError("empty prompt", 400, "empty");
     const session = this.requireSession(sessionId);
@@ -279,7 +279,7 @@ export class DemoEngine {
     return this.mcp(providerId);
   }
 
-  private finishTurn(session: Session, events: import("@mobileagent/protocol").StreamEvent[]): void {
+  private finishTurn(session: Session, events: import("@pocketpilot/protocol").StreamEvent[]): void {
     const { blocks, tokens } = blocksFromEvents(events);
     const text = blocks.find((block) => block.type === "text");
     const message: ChatMessage = {

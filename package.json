@@ -1,23 +1,26 @@
 {
-  "name": "mobileagent",
+  "name": "pocketpilot",
   "private": true,
   "version": "0.1.0",
-  "description": "Mobile-first control panel for coding-agent CLIs.",
+  "description": "PocketPilot (??????): mobile-first control panel for coding-agent CLIs.",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n bridge,web -c cyan,green \"npm run dev -w @mobileagent/bridge\" \"npm run dev -w @mobileagent/web\"",
-    "build": "npm run icons && npm run build -w @mobileagent/web && npm run build -w @mobileagent/bridge",
+    "dev": "concurrently -n bridge,web -c cyan,green \"npm run dev -w @pocketpilot/bridge\" \"npm run dev -w @pocketpilot/web\"",
+    "build": "npm run icons && npm run build -w @pocketpilot/web && npm run build -w @pocketpilot/bridge",
     "start": "node scripts/serve-host.mjs",
     "host": "npm run build && node scripts/serve-host.mjs --lan",
-    "test": "npm run test -w @mobileagent/agent-core && npm run test -w @mobileagent/remote",
-    "typecheck": "npm run typecheck -w @mobileagent/agent-core && npm run typecheck -w @mobileagent/bridge && npm run typecheck -w @mobileagent/web",
-    "desktop": "npm run build && npm run start -w @mobileagent/desktop",
-    "desktop:dist": "npm run build && npm run dist -w @mobileagent/desktop",
-    "desktop:dist:win": "npm run build && npm run dist:win -w @mobileagent/desktop",
+    "test": "npm run test -w @pocketpilot/agent-core && npm run test -w @pocketpilot/remote",
+    "typecheck": "npm run typecheck -w @pocketpilot/agent-core && npm run typecheck -w @pocketpilot/bridge && npm run typecheck -w @pocketpilot/web",
+    "desktop": "npm run build && npm run start -w @pocketpilot/desktop",
+    "desktop:dist": "npm run build && npm run dist -w @pocketpilot/desktop",
+    "desktop:dist:win": "npm run build && npm run dist:win -w @pocketpilot/desktop",
     "icons": "node scripts/make-icons.mjs",
+    "android:icons": "node scripts/make-android-icons.mjs",
+    "android:debug": "node scripts/build-android.mjs debug",
+    "android:release": "node scripts/build-android.mjs release",
     "screenshots": "node scripts/capture-screenshots.mjs"
   },
   "engines": {

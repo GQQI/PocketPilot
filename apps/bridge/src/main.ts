@@ -1,4 +1,4 @@
-import { createHub, HubError, resolveInside } from "@mobileagent/agent-core";
+import { createHub, HubError, resolveInside } from "@pocketpilot/agent-core";
 import { serve } from "@hono/node-server";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -14,8 +14,8 @@ const hub = createHub({
   onPairingCodeChange: (code) => console.log(`  pairing code rotated: ${code}`),
 });
 const app = new Hono();
-const staticDir = process.env.MOBILEAGENT_STATIC;
-const port = Number(process.env.MOBILEAGENT_PORT ?? 47232);
+const staticDir = process.env.POCKETPILOT_STATIC;
+const port = Number(process.env.POCKETPILOT_PORT ?? 47232);
 const hostname = process.env.HOST ?? "127.0.0.1";
 let remote: RemoteService | null = null;
 
@@ -25,11 +25,14 @@ app.onError((error, c) => {
   return c.json({ error: "internal error" }, 500);
 });
 
-const extraOrigins = (process.env.MOBILEAGENT_ORIGINS ?? "").split(",").map((item) => item.trim().replace(/\/$/, "")).filter(Boolean);
-const SSE_HEARTBEAT_MS = Number(process.env.MOBILEAGENT_SSE_HEARTBEAT_MS ?? 15000);
+const extraOrigins = (process.env.POCKETPILOT_ORIGINS ?? "").split(",").map((item) => item.trim().replace(/\/$/, "")).filter(Boolean);
+// Origins of the Capacitor WebView used by the Android/iOS app (it serves the bundled web UI from these).
+// Only these exact origins are added; set POCKETPILOT_CAPACITOR_ORIGINS=0 to turn this off.
+const CAPACITOR_ORIGINS = process.env.POCKETPILOT_CAPACITOR_ORIGINS === "0" ? [] : ["https://localhost", "capacitor://localhost"];
+const SSE_HEARTBEAT_MS = Number(process.env.POCKETPILOT_SSE_HEARTBEAT_MS ?? 15000);
 
 app.use("*", cors({
-  // Never echo arbitrary origins: only explicit MOBILEAGENT_ORIGINS, plus (outside remote mode) loopback / LAN pages.
+  // Never echo arbitrary origins: only explicit POCKETPILOT_ORIGINS, plus (outside remote mode) loopback / LAN pages.
   origin: (origin) => (originAllowed(origin) ? origin : ""),
   allowHeaders: ["authorization", "content-type"],
   allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
@@ -75,7 +78,7 @@ app.post("/api/pair", async (c) => {
 app.get("/api/devices", (c) => c.json(hub.listDevices(hub.authenticate(c.req.header("authorization"))?.id)));
 app.delete("/api/devices/:id", (c) => c.json(hub.revokeDevice(c.req.param("id"))));
 app.post("/api/remote/session", async (c) => {
-  if (!remote) return c.json({ error: "remote transport is disabled (start with MOBILEAGENT_RTC=1)", code: "rtc-disabled" }, 503);
+  if (!remote) return c.json({ error: "remote transport is disabled (start with POCKETPILOT_RTC=1)", code: "rtc-disabled" }, 503);
   return c.json(await remote.createSession(pwaBaseUrl()));
 });
 app.get("/api/fs", (c) => c.json(hub.listDirs(c.req.query("path") ?? "")));
@@ -139,13 +142,13 @@ if (staticDir) {
 }
 
 serve({ fetch: app.fetch, port, hostname }, () => {
-  console.log("MobileAgent host is running on this PC");
+  console.log("PocketPilot host is running on this PC");
   for (const url of phoneUrls(port, Boolean(staticDir))) console.log(`  ${url}`);
   console.log(`  pairing code ${hub.pairingCode()}`);
   if (hub.remote) console.log("  remote mode: loopback is NOT trusted, every client must pair");
 });
 
-if (process.env.MOBILEAGENT_RTC === "1") {
+if (process.env.POCKETPILOT_RTC === "1") {
   void (async () => {
     remote = await startRemote(hub, (request) => app.fetch(request), (message) => console.log(`  [remote] ${message}`));
     if (!remote) return;
@@ -157,7 +160,7 @@ if (process.env.MOBILEAGENT_RTC === "1") {
 }
 
 function pwaBaseUrl(): string {
-  if (process.env.MOBILEAGENT_PWA_URL) return process.env.MOBILEAGENT_PWA_URL;
+  if (process.env.POCKETPILOT_PWA_URL) return process.env.POCKETPILOT_PWA_URL;
   // Prefer a typical home/office LAN address over virtual adapters (docker/WSL use 172.x).
   // Host-side addresses of VMware/Hyper-V/Docker virtual networks usually end in .1: push them last.
   const rank = (url: string) => (/\.1:\d+$/.test(url) ? 5 : 0) + (url.includes("//192.168.") ? 0 : url.includes("//10.") ? 1 : 2);
@@ -207,13 +210,14 @@ function clientIp(c: Context): string {
     return getConnInfo(c).remote.address ?? "unknown";
   } catch {
     // No socket: the request was injected by the WebRTC transport, which tags it with a per-connection id.
-    return `rtc:${c.req.header("x-mobileagent-peer") ?? "?"}`;
+    return `rtc:${c.req.header("x-pocketpilot-peer") ?? "?"}`;
   }
 }
 
 function originAllowed(origin: string | undefined): boolean {
   if (!origin) return false;
-  if (extraOrigins.includes(origin.replace(/\/$/, ""))) return true;
+  const normalized = origin.replace(/\/$/, "");
+  if (extraOrigins.includes(normalized) || CAPACITOR_ORIGINS.includes(normalized)) return true;
   if (hub.remote) return false;
   try {
     const host = new URL(origin).hostname.replace(/^\[|\]$/g, "");
@@ -250,7 +254,7 @@ function isLoopback(c: Context): boolean {
 }
 
 function phoneUrls(bridgePort: number, servingUi: boolean): string[] {
-  const uiPort = servingUi ? bridgePort : Number(process.env.MOBILEAGENT_UI_PORT ?? 47231);
+  const uiPort = servingUi ? bridgePort : Number(process.env.POCKETPILOT_UI_PORT ?? 47231);
   const target = Number.isFinite(uiPort) && uiPort > 0 ? uiPort : bridgePort;
   const hosts = new Set<string>(["127.0.0.1"]);
   for (const entries of Object.values(networkInterfaces())) {

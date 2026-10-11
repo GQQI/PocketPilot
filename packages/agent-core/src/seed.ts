@@ -5,7 +5,7 @@ import type {
   McpServer,
   QueueItem,
   Session,
-} from "@mobileagent/protocol";
+} from "@pocketpilot/protocol";
 
 export const SEED_VERSION = 1;
 

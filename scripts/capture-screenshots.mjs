@@ -5,7 +5,7 @@ import { chromium } from "playwright";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(root, "artifacts");
-const base = process.env.MOBILEAGENT_URL ?? "http://127.0.0.1:47231";
+const base = process.env.POCKETPILOT_URL ?? "http://127.0.0.1:47231";
 
 mkdirSync(outDir, { recursive: true });
 
@@ -87,7 +87,7 @@ const liveOff = await page.request.post(`${base}/api/settings`, {
   data: {
     demoMode: false,
     workspacePath: "/tmp",
-    providers: { cursor: { enabled: true, model: "auto", cliPath: "mobileagent-missing-cli", endpoint: "" } },
+    providers: { cursor: { enabled: true, model: "auto", cliPath: "pocketpilot-missing-cli", endpoint: "" } },
   },
 });
 if (!liveOff.ok()) throw new Error(`live settings ${liveOff.status()}`);
@@ -99,7 +99,7 @@ const body = await created.json();
 await page.goto(`${base}/chat/${body.session.id}`, { waitUntil: "networkidle" });
 await page.getByPlaceholder("写在手机上，发到这台电脑").fill("hello from the phone");
 await page.getByRole("button", { name: "发送" }).click();
-await page.getByText("mobileagent-missing-cli").waitFor({ timeout: 8000 });
+await page.getByText("pocketpilot-missing-cli").waitFor({ timeout: 8000 });
 
 await reset();
 console.log("screenshots written to", outDir);

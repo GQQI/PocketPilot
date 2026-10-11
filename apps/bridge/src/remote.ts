@@ -1,5 +1,5 @@
-import type { Hub } from "@mobileagent/agent-core";
-import { DEFAULT_BROKERS, MqttBus, RemoteHost, type RtcCtor } from "@mobileagent/remote";
+import type { Hub } from "@pocketpilot/agent-core";
+import { DEFAULT_BROKERS, MqttBus, RemoteHost, type RtcCtor } from "@pocketpilot/remote";
 import { hostname } from "node:os";
 import QRCode from "qrcode";
 
@@ -16,7 +16,7 @@ export interface RemoteService {
 }
 
 /**
- * WebRTC + public-MQTT remote transport (opt-in with MOBILEAGENT_RTC=1).
+ * WebRTC + public-MQTT remote transport (opt-in with POCKETPILOT_RTC=1).
  * Requests arriving over the data channel are handed to app.fetch with no socket (so never loopback) and must carry a device token.
  */
 export async function startRemote(hub: Hub, handle: (request: Request) => Response | Promise<Response>, log: (message: string) => void): Promise<RemoteService | null> {
@@ -28,8 +28,8 @@ export async function startRemote(hub: Hub, handle: (request: Request) => Respon
     log(`remote disabled: node-datachannel is not available (${(error as Error).message})`);
     return null;
   }
-  const brokers = process.env.MOBILEAGENT_BROKERS?.split(",").map((item) => item.trim()).filter(Boolean) ?? DEFAULT_BROKERS;
-  const stun = process.env.MOBILEAGENT_STUN?.split(",").map((item) => item.trim()).filter(Boolean);
+  const brokers = process.env.POCKETPILOT_BROKERS?.split(",").map((item) => item.trim()).filter(Boolean) ?? DEFAULT_BROKERS;
+  const stun = process.env.POCKETPILOT_STUN?.split(",").map((item) => item.trim()).filter(Boolean);
   const bus = new MqttBus(brokers, (message) => log(message));
   const host = new RemoteHost({
     bus,

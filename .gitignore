@@ -9,6 +9,7 @@ release/
 .env.*
 !.env.example
 *.log
+.pocketpilot/
 .mobileagent/
 apps/desktop/release/
 coverage/
@@ -16,3 +17,9 @@ playwright-report/
 test-results/
 .vite/
 .tmp/
+
+dist-android/
+.chrome-phone/
+apps/android/android/local.properties
+*.keystore
+*.jks

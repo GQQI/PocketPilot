@@ -1,6 +1,9 @@
-import { MqttBus, RemoteClient, RemoteError, type RemoteTarget } from "@mobileagent/remote";
+import { MqttBus, RemoteClient, RemoteError, type RemoteTarget } from "@pocketpilot/remote";
+import { migrateLegacyStorage } from "./legacy";
 
-const LINK_KEY = "mobileagent.rtc";
+migrateLegacyStorage();
+
+const LINK_KEY = "pocketpilot.rtc";
 
 interface Link {
   secret: string;

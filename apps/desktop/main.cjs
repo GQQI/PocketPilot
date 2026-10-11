@@ -3,7 +3,12 @@ const { spawn } = require("node:child_process");
 const http = require("node:http");
 const path = require("node:path");
 
-const port = process.env.MOBILEAGENT_PORT || "47241";
+// Legacy MOBILEAGENT_* variables still work.
+for (const [key, value] of Object.entries(process.env)) {
+  if (key.startsWith("MOBILEAGENT_") && process.env["POCKETPILOT_" + key.slice(12)] === undefined) process.env["POCKETPILOT_" + key.slice(12)] = value;
+}
+
+const port = process.env.POCKETPILOT_PORT || "47241";
 let bridge;
 
 function bridgeEntry() {
@@ -21,8 +26,8 @@ function startBridge() {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
-      MOBILEAGENT_PORT: port,
-      MOBILEAGENT_STATIC: staticDir(),
+      POCKETPILOT_PORT: port,
+      POCKETPILOT_STATIC: staticDir(),
       HOST: "127.0.0.1",
     },
     stdio: "inherit",
@@ -41,7 +46,7 @@ function waitForBridge() {
       req.on("error", () => retry(left));
     };
     const retry = (left) => {
-      if (left <= 0) reject(new Error("MobileAgent bridge did not start"));
+      if (left <= 0) reject(new Error("PocketPilot bridge did not start"));
       else setTimeout(() => attempt(left - 1), 200);
     };
     attempt(50);
@@ -54,7 +59,7 @@ async function createWindow() {
     height: 920,
     minWidth: 360,
     minHeight: 640,
-    title: "MobileAgent",
+    title: "PocketPilot 口袋领航",
     backgroundColor: "#f3f0ea",
     autoHideMenuBar: true,
     webPreferences: {

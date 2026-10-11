@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "icons/icon-192.png", "icons/icon-512.png"],
       manifest: {
-        name: "MobileAgent",
-        short_name: "MobileAgent",
+        name: "PocketPilot 口袋领航",
+        short_name: "PocketPilot",
         description: "Mobile-first control panel for coding agents",
         theme_color: "#f3f0ea",
         background_color: "#f3f0ea",
@@ -33,8 +33,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "@mobileagent/remote": fileURLToPath(new URL("../../packages/remote/src/index.ts", import.meta.url)),
-      "@mobileagent/protocol": fileURLToPath(new URL("../../packages/protocol/src/index.ts", import.meta.url)),
+      "@pocketpilot/remote": fileURLToPath(new URL("../../packages/remote/src/index.ts", import.meta.url)),
+      "@pocketpilot/protocol": fileURLToPath(new URL("../../packages/protocol/src/index.ts", import.meta.url)),
     },
   },
   server: {
