@@ -1,4 +1,4 @@
-﻿// Brand icon screenshots: header + pairing gate, and a size showcase.  node scripts/capture-icons.mjs -> .tmp/shots4/
+// Brand icon screenshots: header + pairing gate, and a size showcase.  node scripts/capture-icons.mjs -> .tmp/shots4/
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -51,6 +51,7 @@ try {
      ${zoom(png(path.join(bd, "tray-16.png")), 96, "tray 16 x6")}
      ${zoom(png(path.join(bd, "tray.png")), 128, "tray 32 x4")}
    </div></body>`);
-  await page.screenshot({ path: path.join(out, "icon-final.png") });
+  await page.waitForFunction(() => [...document.images].every((i) => i.complete && i.naturalWidth > 0)); await page.waitForTimeout(500);
+  await page.screenshot({ path: path.join(out, "icon-final.png"), fullPage: true });
   console.log("done");
 } finally { await browser?.close(); server.kill(); }
