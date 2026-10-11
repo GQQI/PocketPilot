@@ -257,6 +257,8 @@ export interface AgentStatus {
   /** where this platform's local data was read from */
   dataPath: string;
   configuredCliPath: string;
+  /** one-line install command for this platform on the host OS ("" = see docs) */
+  installCmd: string;
   checkedAt: string;
 }
 
@@ -296,6 +298,14 @@ export interface UsageBucket {
   costUsd: number | null;
 }
 
+export interface UsageDay {
+  /** YYYY-MM-DD in the PC's local time */
+  date: string;
+  tokens: number;
+  requests: number;
+  costUsd: number | null;
+}
+
 export interface AgentUsage {
   supported: boolean;
   /** why not supported / what is missing */
@@ -307,6 +317,8 @@ export interface AgentUsage {
   week: UsageBucket | null;
   month: UsageBucket | null;
   costEstimated: boolean;
+  /** last 7 days, oldest first (local dates) */
+  daily?: UsageDay[];
   models: string[];
   note: string;
   computedAt: string;

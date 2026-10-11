@@ -1,30 +1,44 @@
 import { Mark } from "@/components/shell";
 import { useApp } from "@/lib/store";
 
-/** Horizontal platform switcher. Only platforms detected on this PC are offered. */
-export function AgentPicker({ onPick }: { onPick?: (id: string) => void }) {
+export type AgentState = "ready" | "history" | "missing";
+
+export function agentState(available: boolean, hasHistory: boolean): AgentState {
+  return available ? "ready" : hasHistory ? "history" : "missing";
+}
+
+/** Horizontal, swipeable platform cards. `sticky` pins the strip under the page top (used in Settings). */
+export function AgentPicker({ onPick, sticky = false }: { onPick?: (id: string) => void; sticky?: boolean }) {
   const { overview, agent, selectAgent, t } = useApp();
   const list = overview?.agents ?? [];
   if (list.length === 0) return null;
   return (
-    <div className="agent-tabs app-scroll" role="tablist" aria-label={t("a.current")} data-testid="agent-picker">
-      {list.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          role="tab"
-          aria-selected={item.id === agent?.id}
-          className={`agent-tab ${item.id === agent?.id ? "agent-tab-on" : ""}`}
-          onClick={() => {
-            selectAgent(item.id);
-            onPick?.(item.id);
-          }}
-        >
-          <Mark monogram={item.monogram} accent={item.accent} />
-          <span className="agent-tab-name">{item.name}</span>
-          <span className={`dot ${item.available ? "dot-ok" : "dot-off"}`} aria-hidden="true" />
-        </button>
-      ))}
+    <div className={sticky ? "agent-strip" : undefined}>
+      <div className="agent-tabs app-scroll" role="tablist" aria-label={t("a.current")} data-testid="agent-picker">
+        {list.map((item) => {
+          const state = agentState(item.available, item.hasHistory);
+          const on = item.id === agent?.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              className={`agent-tab ${on ? "agent-tab-on" : ""}`}
+              onClick={() => {
+                selectAgent(item.id);
+                onPick?.(item.id);
+              }}
+            >
+              <Mark monogram={item.monogram} accent={item.accent} />
+              <span className="agent-tab-text">
+                <span className="agent-tab-name">{item.name}</span>
+                <span className="agent-tab-state"><span className={`dot dot-${state}`} aria-hidden="true" />{t(`a.st.${state === "ready" ? "ready" : state === "history" ? "history" : "missing"}`)}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

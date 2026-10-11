@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent, UsageBucket } from "@pocketpilot/protocol";
 import { baseName, cap, exists, prettyError, FileCache, findExecutable, globDirs, home, listDir, oneLine, readHead, readLines, runCapture, runStream, safeStat, startOfToday, tryJson } from "./util";
-import { emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
+import { dailyTotals, emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 /**
  * Codex.
@@ -275,6 +275,7 @@ export const codexAgent: LocalAgent = {
     const today = emptyBucket(), week = emptyBucket(), month = emptyBucket();
     const models = new Set<string>();
     const seen = new Set<string>();
+    const daily = dailyTotals();
     for (const e of rollouts()) {
       if (e.mtime < t0 - 29 * 86400000) continue;
       for await (const line of readLines(e.file)) {
@@ -294,6 +295,7 @@ export const codexAgent: LocalAgent = {
         const input = last.input_tokens ?? 0, cached = last.cached_input_tokens ?? 0, output = last.output_tokens ?? 0;
         if (!input && !output) continue;
         const ts = Date.parse(String(j.timestamp ?? "")) || e.mtime;
+        daily.add(ts, Math.max(0, input - cached) + output, 1, null);
         for (const [b, from] of [[today, t0], [week, t0 - 6 * 86400000], [month, t0 - 29 * 86400000]] as [UsageBucket, number][]) {
           if (ts < from) continue;
           b.inputTokens += Math.max(0, input - cached); b.cacheTokens += cached; b.outputTokens += output; b.requests += 1;
@@ -307,6 +309,7 @@ export const codexAgent: LocalAgent = {
       hasTokens: true,
       today, week, month,
       costEstimated: false,
+      daily: daily.list(),
       models: [...models],
       note: "token 来自 Codex 本地会话记录（输入 = 未命中缓存的输入）；费用不估算（ChatGPT 账号登录按套餐额度计费，没有逐次单价）。“请求数”是模型调用次数。",
       computedAt: new Date().toISOString(),

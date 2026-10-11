@@ -1,11 +1,11 @@
-import type { AgentProject, AgentStatus, AgentUsage, UsageBucket } from "@pocketpilot/protocol";
+import type { AgentProject, AgentStatus, AgentUsage } from "@pocketpilot/protocol";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { AgentPicker, statusLabel } from "@/components/agent-picker";
 import { Button, Input } from "@/components/ui";
+import { UsageDetail } from "@/components/usage";
 import { api } from "@/lib/api";
 import { rtcConfigured, rtcHost } from "@/lib/rtc";
-import { compact } from "@/lib/format";
 import { useApp } from "@/lib/store";
 
 export function SettingsPage() {
@@ -13,7 +13,7 @@ export function SettingsPage() {
   return (
     <div data-testid="settings" className="app-scroll h-full overflow-y-auto px-4 pb-8 md:px-8">
       <h1 className="display !p-0 text-3xl">{t("set.title")}</h1>
-      <div className="mt-3"><AgentPicker /></div>
+      <AgentPicker sticky />
       {agent ? <PlatformDetail key={agent.id} agent={agent} /> : <p className="mt-6 text-sm text-mute">{t("a.noneHelp")}</p>}
 
       <details className="panel mt-6 p-4" data-testid="general">
@@ -72,6 +72,7 @@ function PlatformDetail({ agent }: { agent: AgentStatus }) {
   const authText = agent.auth.state === "ok" ? t("set.authOk") : agent.auth.state === "missing" ? t("set.authMissing") : t("set.authUnknown");
   return (
     <div className="mt-4 space-y-4" data-testid="platform-detail">
+      {!agent.cliPath ? <InstallGuide agent={agent} /> : null}
       <section className="panel p-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="!text-base font-semibold">{agent.name}</h2>
@@ -139,45 +140,42 @@ function UsageCard({ usage }: { usage: AgentUsage | null }) {
   return (
     <section className="panel p-4" data-testid="usage">
       <h2 className="!text-base font-semibold">{t("set.usage")}</h2>
-      {usage === null ? <p className="mt-2 text-sm text-mute">{t("set.usageLoading")}</p> : null}
-      {usage && !usage.supported ? (
-        <div className="mt-2">
-          <p className="text-sm font-medium">{t("set.noUsage")}</p>
-          <p className="mt-1 text-sm text-mute">{usage.reason}</p>
-        </div>
-      ) : null}
-      {usage?.supported ? (
-        <>
-          <div className="usage-grid mt-3">
-            <Bucket title={t("set.today")} b={usage.today} tokens={usage.hasTokens} />
-            <Bucket title={t("set.week")} b={usage.week} tokens={usage.hasTokens} />
-            <Bucket title={t("set.month")} b={usage.month} tokens={usage.hasTokens} />
-          </div>
-          {usage.models.length > 0 ? <p className="mt-3 break-words text-xs text-mute">{t("set.models")}: {usage.models.join(", ")}</p> : null}
-          {usage.note ? <p className="mt-2 text-xs leading-5 text-mute">{usage.note}</p> : null}
-          <p className="mt-1 text-[11px] text-mute">{usage.source}</p>
-        </>
-      ) : null}
+      <UsageDetail usage={usage} />
     </section>
   );
 }
 
-function Bucket({ title, b, tokens }: { title: string; b: UsageBucket | null; tokens: boolean }) {
-  const { t } = useApp();
-  if (!b) return null;
+const LOGIN: Record<string, string> = { cursor: "cursor-agent login", "claude-code": "claude login", codex: "codex login", gemini: "gemini", opencode: "opencode auth login" };
+
+function InstallGuide({ agent }: { agent: AgentStatus }) {
+  const { t, setNotice } = useApp();
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(agent.installCmd);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setNotice(agent.installCmd);
+    }
+  }
   return (
-    <div className="usage-cell">
-      <div className="text-xs font-semibold text-mute">{title}</div>
-      {tokens ? (
+    <section className="panel install-guide p-4" data-testid="install-guide">
+      <h2 className="!text-base font-semibold">{t("i.title")}</h2>
+      <p className="mt-1 text-sm text-mute">{t("i.lead", { name: agent.name })}</p>
+      {agent.installCmd ? (
         <>
-          <div className="usage-main">{compact(b.inputTokens + b.outputTokens)}</div>
-          <div className="usage-sub">{t("set.in")} {compact(b.inputTokens)}</div>
-          <div className="usage-sub">{t("set.out")} {compact(b.outputTokens)}</div>
-          <div className="usage-sub">{t("set.cache")} {compact(b.cacheTokens)}</div>
+          <p className="mt-3 text-sm">{t("i.step1")}</p>
+          <div className="cmd-box">
+            <code>{agent.installCmd}</code>
+            <button type="button" className="cmd-copy" onClick={() => void copy()}>{copied ? t("i.copied") : t("i.copy")}</button>
+          </div>
         </>
       ) : null}
-      <div className={tokens ? "usage-sub" : "usage-main"}>{t("set.req")} {b.requests}</div>
-      {tokens ? <div className="usage-sub">{t("set.cost")} {b.costUsd === null ? t("set.costNone") : `$${b.costUsd.toFixed(2)}`}</div> : null}
-    </div>
+      <p className="mt-3 text-sm">{t("i.step2", { login: LOGIN[agent.id] ?? agent.cli })}</p>
+      <p className="mt-1 text-sm">{t("i.step3")}</p>
+      {agent.id === "cursor" ? <p className="mt-3 text-xs text-mute">{t("i.ideNote")}</p> : null}
+      <div className="mt-3"><a className="text-sm text-accent" href={agent.docsUrl} target="_blank" rel="noreferrer">{t("i.docs")}</a></div>
+    </section>
   );
 }

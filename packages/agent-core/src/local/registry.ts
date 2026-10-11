@@ -12,6 +12,14 @@ import { baseName, normPath, isDir } from "./util";
 
 const AGENTS: LocalAgent[] = [cursorAgent, claudeAgent, codexAgent, ...cliOnlyAgents];
 
+const INSTALL: Record<string, { win: string; unix: string }> = {
+  cursor: { win: "irm 'https://cursor.com/install?win32=true' | iex", unix: "curl https://cursor.com/install -fsS | bash" },
+  "claude-code": { win: "npm install -g @anthropic-ai/claude-code", unix: "npm install -g @anthropic-ai/claude-code" },
+  codex: { win: "npm install -g @openai/codex", unix: "npm install -g @openai/codex" },
+  gemini: { win: "npm install -g @google/gemini-cli", unix: "npm install -g @google/gemini-cli" },
+  opencode: { win: "npm install -g opencode-ai", unix: "npm install -g opencode-ai" },
+};
+
 export type CtxFactory = (id: string) => AgentCtx;
 
 /** Facade over every platform adapter: real detection, history, projects, chat and usage. Nothing here is demo data. */
@@ -65,7 +73,7 @@ export class LocalAgents {
       available: installed,
       auth: detection.auth,
       defaultModel: ctx.model || detection.defaultModel || meta.defaultModel,
-      models: [...meta.models],
+      models: detection.models && detection.models.length ? detection.models : [...meta.models],
       sessionCount,
       projectCount,
       canListSessions: agent.history,
@@ -74,6 +82,7 @@ export class LocalAgents {
       docsUrl: meta.docsUrl,
       dataPath: detection.dataPath,
       configuredCliPath: ctx.cliPath,
+      installCmd: INSTALL[id]?.[process.platform === "win32" ? "win" : "unix"] ?? "",
       checkedAt: new Date().toISOString(),
     };
     this.detectCache.set(id, { at: Date.now(), value });
