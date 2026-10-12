@@ -2,9 +2,11 @@
 
 > 内容依据官方文档：https://developers.openai.com/codex/auth（查证日期 2026-10-11）。官方页面会改版，按钮名称以你看到的官方界面为准。
 
-## 先确认：你需要 API Key 吗？
+## 先登录
 
-官方文档：Codex 支持两种登录——**Sign in with ChatGPT**（订阅，运行 `codex login`）和 **API Key**（按用量计费）。PocketPilot 把保存的密钥作为 `OPENAI_API_KEY` 传给 codex；如果你已经 `codex login` 过，可以不填。
+在电脑上运行 `codex login`（Sign in with ChatGPT）。PocketPilot 看到 `~/.codex/auth.json` 就用这个登录，**不会**把保存的 `OPENAI_API_KEY` 传给 `codex`。
+
+API Key 只是备用：没有 `auth.json`、并且你保存了密钥时才会用 `OPENAI_API_KEY`。不必为了用 Codex 去填密钥。
 
 ## 获取步骤
 

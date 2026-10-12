@@ -2,9 +2,11 @@
 
 > 内容依据官方文档：https://www.trae.cn/（查证日期 2026-10-11）。官方页面会改版，按钮名称以你看到的官方界面为准。
 
-## 先确认：你需要 API Key 吗？
+## 先登录，不需要 API Key
 
-Trae CN 是桌面 IDE，没有公开的 API Key 机制，PocketPilot 对它**不需要也不保存密钥**。PocketPilot 只以**只读**方式读取本机 `%APPDATA%\Trae CN` 下的历史会话与项目，用于在手机上查看；对话请在 Trae CN 里进行。
+Trae CN 编辑器没有公开的 API Key。PocketPilot 只读它能读到的明文 CLI 会话；编辑器数据库是加密的，读不到就不会编造。
+
+要用 TRAE CLI 从手机发消息，在电脑上运行该命令行自己的登录（常见是 `traecli login` 或 `traex login`，以你装到的程序名为准）。PocketPilot 不保存、也不注入密钥。
 
 ## 获取步骤
 

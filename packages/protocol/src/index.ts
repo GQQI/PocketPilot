@@ -226,6 +226,8 @@ export interface AgentAuth {
   /** where the credential comes from: env | file | login | settings | cli | none (never the secret itself) */
   source: string;
   note: string;
+  /** Command the user runs on the PC to sign the CLI in. Empty or omitted when this platform has no CLI login. */
+  loginCommand?: string;
 }
 
 export interface AgentStatus {

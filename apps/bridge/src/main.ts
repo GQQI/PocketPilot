@@ -7,9 +7,9 @@ import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { streamSSE } from "hono/streaming";
 import type { Context } from "hono";
 import { startRemote, type RemoteService } from "./remote";
+import { sseFrom } from "./sse";
 
 const hub = createHub({
   onPairingCodeChange: (code) => console.log(`  pairing code rotated: ${code}`),
@@ -30,12 +30,11 @@ const extraOrigins = (process.env.POCKETPILOT_ORIGINS ?? "").split(",").map((ite
 // Origins of the Capacitor WebView used by the Android/iOS app (it serves the bundled web UI from these).
 // Only these exact origins are added; set POCKETPILOT_CAPACITOR_ORIGINS=0 to turn this off.
 const CAPACITOR_ORIGINS = process.env.POCKETPILOT_CAPACITOR_ORIGINS === "0" ? [] : ["https://localhost", "capacitor://localhost"];
-const SSE_HEARTBEAT_MS = Number(process.env.POCKETPILOT_SSE_HEARTBEAT_MS ?? 15000);
 
 app.use("*", cors({
   // Never echo arbitrary origins: only explicit POCKETPILOT_ORIGINS, plus (outside remote mode) loopback / LAN pages.
   origin: (origin) => (originAllowed(origin) ? origin : ""),
-  allowHeaders: ["authorization", "content-type"],
+  allowHeaders: ["authorization", "content-type", "x-pocketpilot-pad"],
   allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
 }));
 
@@ -117,12 +116,27 @@ app.post("/api/desktop/pairing", async (c) => {
 app.get("/api/desktop/devices", (c) => c.json(hub.listDevices()));
 app.post("/api/desktop/agents/:id/test", async (c) => c.json(await hub.agents.test(c.req.param("id"))));
 app.delete("/api/desktop/devices/:id", (c) => c.json(hub.revokeDevice(c.req.param("id"))));
-app.get("/api/desktop/config", (c) => {
+app.get("/api/desktop/config", async (c) => {
   const boot = hub.bootstrap();
+  const overview = await hub.agents.overview().catch(() => null);
+  const byId = new Map((overview?.agents ?? []).map((agent) => [agent.id, agent]));
   return c.json({
     workspacePath: boot.settings.workspacePath,
     demoMode: boot.settings.demoMode,
-    providers: boot.providers.map((p) => ({ id: p.meta.id, name: p.meta.name, keySource: p.keySource, keyLast4: hub.keyHint(p.meta.id), envKeys: p.meta.envKeys })),
+    providers: boot.providers.map((p) => {
+      const agent = byId.get(p.meta.id);
+      return {
+        id: p.meta.id,
+        name: p.meta.name,
+        keySource: p.keySource,
+        keyLast4: hub.keyHint(p.meta.id),
+        envKeys: p.meta.envKeys,
+        auth: agent?.auth ?? null,
+        installed: agent?.installed ?? false,
+        available: agent?.available ?? false,
+        cliPath: agent?.cliPath ?? null,
+      };
+    }),
   });
 });
 app.post("/api/desktop/config", async (c) => {
@@ -281,33 +295,6 @@ function pwaBaseUrl(): string {
   const rank = (url: string) => (/\.1:\d+$/.test(url) ? 5 : 0) + (url.includes("//192.168.") ? 0 : url.includes("//10.") ? 1 : 2);
   const urls = phoneUrls(port, Boolean(staticDir)).filter((url) => !url.includes("127.0.0.1")).sort((x, y) => rank(x) - rank(y));
   return urls[0] ?? `http://127.0.0.1:${port}`;
-}
-
-async function sseFrom(c: Context, source: AsyncIterable<unknown>) {
-  const iterator = source[Symbol.asyncIterator]();
-  let first: IteratorResult<unknown>;
-  try {
-    first = await iterator.next();
-  } catch (error) {
-    if (error instanceof HubError) return c.json({ error: error.message, code: error.code }, error.status as 400);
-    throw error;
-  }
-  c.header("Cache-Control", "no-cache, no-transform");
-  c.header("X-Accel-Buffering", "no");
-  return streamSSE(c, async (stream) => {
-    // Comment-line heartbeat keeps proxies/NATs from closing idle streams; clients ignore it.
-    const beat = setInterval(() => { void stream.write(": ping\n\n").catch(() => undefined); }, SSE_HEARTBEAT_MS);
-    try {
-      if (!first.done) await stream.writeSSE({ data: JSON.stringify(first.value) });
-      while (true) {
-        const next = await iterator.next();
-        if (next.done) break;
-        await stream.writeSSE({ data: JSON.stringify(next.value) });
-      }
-    } finally {
-      clearInterval(beat);
-    }
-  });
 }
 
 const PROXY_HEADERS = ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-port", "x-real-ip", "forwarded", "via", "cf-connecting-ip", "true-client-ip", "x-original-forwarded-for"];

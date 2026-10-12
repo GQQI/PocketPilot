@@ -2,9 +2,9 @@
 
 > 内容依据官方文档：https://api-docs.deepseek.com/（查证日期 2026-10-11）。官方页面会改版，按钮名称以你看到的官方界面为准。
 
-## 先确认：你需要 API Key 吗？
+## 这个平台没有命令行登录
 
-DeepSeek API 兼容 OpenAI/Anthropic 格式（base URL `https://api.deepseek.com`）。官方文档在 “Your First API Call” 里说明：先申请 API key。PocketPilot 把密钥作为 `DEEPSEEK_API_KEY` 传给相关工具。
+DeepSeek Harness（`dsh`）没有像 `cursor-agent login` 那样的本机登录。对话需要 `DEEPSEEK_API_KEY`，这不是可选备用。官方文档在 “Your First API Call” 里说明要先申请 API key（base URL `https://api.deepseek.com`）。
 
 ## 获取步骤
 
