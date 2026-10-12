@@ -1,3 +1,4 @@
+import { spawnSync as __spawnSync } from "node:child_process";
 import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, createReadStream, existsSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -144,7 +145,8 @@ export function normPath(p: string): string {
 }
 
 function pathDirs(): string[] {
-  return (process.env.PATH ?? process.env.Path ?? "").split(path.delimiter).filter(Boolean);
+  const env = mergeUserEnv(process.env);
+  return (env.Path ?? env.PATH ?? "").split(path.delimiter).filter(Boolean);
 }
 
 /** Finds an executable: explicit absolute path, then PATH, then extra directories. */
@@ -302,4 +304,48 @@ export function prettyError(raw: string): string {
     if (m) return m;
   }
   return text;
+}
+
+let winEnvCache: { at: number; vars: Record<string, string> } | null = null;
+
+function expandWin(value: string, vars: Record<string, string>): string {
+  return value.replace(/%([^%]+)%/g, (m, name: string) => vars[name] ?? process.env[name] ?? m);
+}
+
+/** Machine + user environment variables from the Windows registry. A desktop app started before a CLI was installed (or before a key was exported) does not see them in process.env. */
+export function windowsRegistryEnv(): Record<string, string> {
+  if (process.platform !== "win32") return {};
+  if (winEnvCache && Date.now() - winEnvCache.at < 30_000) return winEnvCache.vars;
+  const vars: Record<string, string> = {};
+  for (const key of ["HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", "HKCU\\Environment"]) {
+    try {
+      const result = __spawnSync("reg", ["query", key], { windowsHide: true, timeout: 4000 });
+      let text: string;
+      try { text = new TextDecoder("gbk").decode(result.stdout); } catch { text = String(result.stdout ?? ""); }
+      for (const line of text.split(/\r?\n/)) {
+        const m = /^\s+(\S+)\s+REG_(?:EXPAND_)?SZ\s+(.*)$/.exec(line);
+        if (!m) continue;
+        const name = m[1].toLowerCase() === "path" ? "Path" : m[1];
+        vars[name] = name === "Path" && vars.Path ? `${vars.Path};${m[2]}` : m[2];
+      }
+    } catch { /* reg unavailable */ }
+  }
+  for (const name of Object.keys(vars)) vars[name] = expandWin(vars[name], vars);
+  winEnvCache = { at: Date.now(), vars };
+  return vars;
+}
+
+/** process.env plus whatever the registry knows (PATH entries and variables such as XAI_API_KEY) that the current process does not have. */
+export function mergeUserEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...base };
+  if (process.platform !== "win32") return out;
+  const reg = windowsRegistryEnv();
+  const have = (out.Path ?? out.PATH ?? "").split(";").filter(Boolean);
+  const seen = new Set(have.map((d) => d.toLowerCase()));
+  const extra = (reg.Path ?? "").split(";").filter((d) => d && !seen.has(d.toLowerCase()));
+  const merged = [...have, ...extra].join(";");
+  out.Path = merged;
+  if ("PATH" in out) out.PATH = merged;
+  for (const [name, value] of Object.entries(reg)) if (name !== "Path" && out[name] === undefined) out[name] = value;
+  return out;
 }

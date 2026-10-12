@@ -75,6 +75,8 @@ function toast(text, ok) {
   toastTimer = setTimeout(() => (el.hidden = true), 2600);
 }
 
+window.ppToast = (text, ok) => toast(text, ok);
+
 function applyLang(next) {
   lang = next === "en" ? "en" : "zh";
   document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
@@ -89,6 +91,8 @@ function showTab(name) {
   for (const tab of document.querySelectorAll(".tab")) tab.classList.toggle("active", tab.dataset.tab === name);
   $("page-home").hidden = name !== "home";
   $("page-settings").hidden = name !== "settings";
+  if ($("page-platforms")) $("page-platforms").hidden = name !== "platforms";
+  if (name === "platforms" && window.ppPlatforms) window.ppPlatforms.load();
   if (name === "settings") loadConfig();
 }
 for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click", () => showTab(tab.dataset.tab));

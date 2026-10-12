@@ -111,13 +111,14 @@ app.post("/api/desktop/pairing", async (c) => {
   return c.json({ rtc: true, code, expiresAt: session.expiresAt, url: session.url, qrSvg: session.qrSvg, lanUrl: pwaBaseUrl() });
 });
 app.get("/api/desktop/devices", (c) => c.json(hub.listDevices()));
+app.post("/api/desktop/agents/:id/test", async (c) => c.json(await hub.agents.test(c.req.param("id"))));
 app.delete("/api/desktop/devices/:id", (c) => c.json(hub.revokeDevice(c.req.param("id"))));
 app.get("/api/desktop/config", (c) => {
   const boot = hub.bootstrap();
   return c.json({
     workspacePath: boot.settings.workspacePath,
     demoMode: boot.settings.demoMode,
-    providers: boot.providers.map((p) => ({ id: p.meta.id, name: p.meta.name, keySource: p.keySource })),
+    providers: boot.providers.map((p) => ({ id: p.meta.id, name: p.meta.name, keySource: p.keySource, keyLast4: hub.keyHint(p.meta.id), envKeys: p.meta.envKeys })),
   });
 });
 app.post("/api/desktop/config", async (c) => {
@@ -153,6 +154,7 @@ app.post("/api/agents/:id/config", async (c) => {
   hub.agents.invalidate(id);
   return c.json(await hub.agents.status(id, true));
 });
+app.post("/api/agents/:id/test", async (c) => c.json(await hub.agents.test(c.req.param("id"))));
 app.post("/api/agents/:id/chat", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   return sseFrom(c, hub.agents.chat(c.req.param("id"), {
@@ -244,7 +246,7 @@ serve({ fetch: app.fetch, port, hostname }, () => {
 
 if (process.env.POCKETPILOT_RTC === "1") {
   void (async () => {
-    remote = await startRemote(hub, (request) => app.fetch(request), (message) => console.log(`  [remote] ${message}`));
+    remote = await startRemote(hub, (request) => app.fetch(request), (message) => console.log(`  [remote] ${message}`), () => phoneUrls(port, true).filter((url) => !url.includes("127.0.0.1")));
     if (!remote || process.env.POCKETPILOT_QUIET_PAIRING === "1") return;
     const session = await remote.createSession(pwaBaseUrl());
     console.log("  Scan with the phone camera (expires in 5 min, one use):");

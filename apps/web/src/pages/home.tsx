@@ -2,7 +2,7 @@ import { ChevronRight, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import type { AgentSession, AgentUsage, UsageBucket } from "@pocketpilot/protocol";
-import { AgentPicker, agentState, statusLabel } from "@/components/agent-picker";
+import { AgentPicker, agentState, statusLabel, needsKey } from "@/components/agent-picker";
 import { money, UsageDetail, useAllUsage } from "@/components/usage";
 import { compact } from "@/lib/format";
 import { Mark } from "@/components/shell";
@@ -89,7 +89,7 @@ export function HomePage() {
             <Mark monogram={agent.monogram} accent={agent.accent} />
             <div className="min-w-0 flex-1">
               <div className="font-semibold">{agent.name}</div>
-              <div className="hero-agent-sub"><span className={`dot dot-${state}`} />{statusLabel(agent.available, agent.hasHistory, t)}{agent.version ? ` · ${agent.version}` : ""}</div>
+              <div className="hero-agent-sub"><span className={`dot dot-${state}`} />{statusLabel(agent.available, agent.hasHistory, t, needsKey(agent))}{agent.version ? ` · ${agent.version}` : ""}</div>
             </div>
             <button type="button" className="hero-new" onClick={() => navigate(agent.available ? "/projects" : "/settings")}>
               {agent.available ? <><Plus size={16} />{t("a.newChat")}</> : t("set.title")}
@@ -98,7 +98,7 @@ export function HomePage() {
         ) : null}
       </section>
 
-      {overview.detected > 0 ? <div className="mt-3"><AgentPicker /></div> : null}
+      {overview.agents.length > 0 ? <div className="mt-3"><AgentPicker /></div> : null}
 
       {agent ? (
         <>

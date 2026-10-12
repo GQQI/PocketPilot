@@ -3,8 +3,36 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { ApiError, api } from "./api";
 import { copy } from "./i18n";
 import { extra } from "./i18n2";
+import { more } from "./i18n3";
+import { retryLink } from "./rtc";
 
 const AGENT_KEY = "pocketpilot.agent";
+const CACHE_PREFIX = "pocketpilot.cache.";
+
+/** Last successful bootstrap / agents answer: shown immediately on the next launch while the link is (re)established. */
+function readCache<T>(name: string): T | null {
+  try {
+    const raw = localStorage.getItem(CACHE_PREFIX + name);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+function writeCache(name: string, value: unknown) {
+  try {
+    localStorage.setItem(CACHE_PREFIX + name, JSON.stringify(value));
+  } catch {
+    /* quota / private mode */
+  }
+}
+function clearCache() {
+  try {
+    localStorage.removeItem(CACHE_PREFIX + "boot");
+    localStorage.removeItem(CACHE_PREFIX + "agents");
+  } catch {
+    /* ignore */
+  }
+}
 
 interface AppContextValue {
   data: Bootstrap | null;
@@ -16,6 +44,10 @@ interface AppContextValue {
   error: string | null;
   notice: string | null;
   refresh: () => Promise<void>;
+  /** true until the first successful refresh of this launch (data on screen may be the cached copy) */
+  stale: boolean;
+  /** reconnect from scratch (LAN probe, then WebRTC) and reload */
+  retry: () => Promise<void>;
   refreshAgents: (force?: boolean) => Promise<void>;
   replace: (next: Bootstrap) => void;
   setNotice: (text: string | null) => void;
@@ -36,13 +68,14 @@ function readAgentId(): string {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<Bootstrap | null>(null);
-  const [overview, setOverview] = useState<AgentsOverview | null>(null);
+  const [data, setData] = useState<Bootstrap | null>(() => readCache<Bootstrap>("boot"));
+  const [overview, setOverview] = useState<AgentsOverview | null>(() => readCache<AgentsOverview>("agents"));
   const [agentId, setAgentId] = useState(readAgentId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [needsPair, setNeedsPair] = useState(false);
+  const [stale, setStale] = useState(true);
 
   const refreshAgents = useCallback(async (force = false) => {
     setOverview(await api.agents(force));
@@ -54,12 +87,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const [boot, agents] = await Promise.all([api.bootstrap(), api.agents()]);
       setData(boot);
       setOverview(agents);
+      writeCache("boot", boot);
+      writeCache("agents", agents);
+      setStale(false);
       setError(null);
       setNeedsPair(false);
     } catch (caught) {
       if (caught instanceof ApiError && (caught.code === "pair" || caught.status === 401)) {
         setNeedsPair(true);
         setError(null);
+        setData(null);
+        setOverview(null);
+        clearCache();
       } else {
         setNeedsPair(false);
         setError(caught instanceof Error ? caught.message : "offline");
@@ -72,6 +111,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // the link came up after a failure / while the cached copy was showing: reload
+  useEffect(() => {
+    if (!error && !stale) return;
+    const on = () => void refresh();
+    window.addEventListener("pocketpilot:link", on);
+    return () => window.removeEventListener("pocketpilot:link", on);
+  }, [error, stale, refresh]);
 
   useEffect(() => {
     if (!notice) return;
@@ -110,6 +157,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     error,
     notice,
     refresh,
+    stale,
+    retry: async () => {
+      await retryLink().catch(() => undefined);
+      await refresh();
+    },
     refreshAgents,
     replace: setData,
     setNotice,
@@ -118,7 +170,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const fallback = extra.zh as Record<string, string>;
       const old = copy[locale] as Record<string, string>;
       const oldZh = copy.zh as Record<string, string>;
-      const template = table[key] ?? old[key] ?? fallback[key] ?? oldZh[key] ?? key;
+      const mine = more[locale] as Record<string, string>;
+      const template = mine[key] ?? table[key] ?? old[key] ?? (more.zh as Record<string, string>)[key] ?? fallback[key] ?? oldZh[key] ?? key;
       return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars?.[name] ?? ""));
     },
     locale,
@@ -127,7 +180,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await api.pair(code, origin);
       await refresh();
     },
-  }), [agent, data, error, loading, locale, needsPair, notice, overview, refresh, refreshAgents]);
+  }), [agent, data, error, loading, locale, needsPair, notice, overview, refresh, refreshAgents, stale]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

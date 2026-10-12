@@ -1,3 +1,5 @@
+import { spawnSync as __spawnSync } from "node:child_process";
+import { mergeUserEnv } from "./local/util";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
@@ -544,9 +546,17 @@ export class Hub {
   }
 
   private keySource(meta: ProviderMeta): KeySource {
-    if (meta.envKeys.some((key) => Boolean(process.env[key]))) return "env";
+    if (meta.envKeys.some((key) => Boolean(mergeUserEnv(process.env)[key]))) return "env";
     if (this.secrets[meta.id]) return "file";
     return "none";
+  }
+
+  /** Last 4 characters of the key in use for a provider ("" = none). The key itself is never returned. */
+  keyHint(id: string): string {
+    const meta = this.requireMeta(id);
+    const env = mergeUserEnv(process.env);
+    const key = meta.envKeys.map((name) => env[name]).find(Boolean) ?? this.secrets[id] ?? "";
+    return key ? key.slice(-4) : "";
   }
 
   agentCtx(providerId: string): AgentCtx {
@@ -566,7 +576,7 @@ export class Hub {
   private liveContext(providerId: string) {
     const meta = this.requireMeta(providerId);
     const config = this.settings.providers[providerId] ?? defaultConfig(meta);
-    const env: NodeJS.ProcessEnv = { ...process.env };
+    const env: NodeJS.ProcessEnv = mergeUserEnv(process.env);
     const primary = meta.envKeys[0];
     if (primary && this.secrets[providerId] && !env[primary]) env[primary] = this.secrets[providerId];
     if (providerId === "deepseek-harness" && config.endpoint) env.DEEPSEEK_BASE_URL = config.endpoint;
@@ -636,6 +646,10 @@ export class Hub {
     const file = path.join(this.dataDir, "secrets.json");
     writeJson(file, this.secrets);
     chmodSync(file, 0o600);
+    if (process.platform === "win32") {
+      // chmod is a no-op on Windows: strip inherited ACLs so only the current user can read the file
+      try { __spawnSync("icacls", [file, "/inheritance:r", "/grant:r", `${process.env.USERNAME ?? ""}:(F)`], { windowsHide: true, timeout: 5000 }); } catch { /* best effort */ }
+    }
   }
 
   private persistDemo(): void {

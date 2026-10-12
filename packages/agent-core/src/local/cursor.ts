@@ -1,3 +1,4 @@
+import type { AgentTestResult } from "@pocketpilot/protocol";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent } from "@pocketpilot/protocol";
@@ -188,6 +189,21 @@ export const cursorAgent: LocalAgent = {
         : { state: "missing", source: "none", note: ctx.locale === "en" ? "cursor-agent not found and no CURSOR_API_KEY" : "未找到 cursor-agent，也没有配置 CURSOR_API_KEY" };
     }
     return { ...cli, hasHistory, dataPath: root(), auth, models };
+  },
+
+  async test(ctx, cli): Promise<AgentTestResult> {
+    const zh = ctx.locale !== "en";
+    if (!cli) return { ok: false, message: zh ? "没有找到 cursor-agent，请先安装（设置 → 连接与登录里有安装指引）。" : "cursor-agent was not found. Install it first." };
+    loginCache = null;
+    modelCache = null;
+    const login = await loginStatus(cli, ctx).catch(() => null);
+    if (login?.ok) return { ok: true, message: zh ? `cursor-agent 已登录${login.email ? `：${login.email}` : ""}。` : `cursor-agent is signed in${login.email ? `: ${login.email}` : ""}.` };
+    if (ctx.keySource !== "none") {
+      const models = await listModels(cli, ctx).catch(() => [] as string[]);
+      if (models.length > 0) return { ok: true, message: zh ? `CURSOR_API_KEY 可用，能获取 ${models.length} 个模型。` : `CURSOR_API_KEY works: ${models.length} models.` };
+      return { ok: false, message: zh ? "密钥已保存，但 cursor-agent 用它取不到模型：请确认密钥有效（Cursor Dashboard → API Keys）。" : "A key is saved but cursor-agent could not list models with it. Check it in Cursor Dashboard → API Keys." };
+    }
+    return { ok: false, message: zh ? "cursor-agent 未登录，也没有 API Key：运行 cursor-agent login，或填写密钥。" : "Not signed in and no API key." };
   },
 
   async sessions(ctx): Promise<AgentSession[]> {

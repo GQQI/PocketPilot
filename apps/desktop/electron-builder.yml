@@ -18,6 +18,8 @@ extraResources:
     to: bridge
   - from: ../web/dist
     to: web
+  - from: ../../docs/api-key-guides
+    to: guides
   - from: build
     to: build
     filter:

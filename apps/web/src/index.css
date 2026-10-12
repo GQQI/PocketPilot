@@ -486,3 +486,16 @@ button.set-row:not(:disabled):active, a.set-row:active { background: var(--ma-ti
 .task-title { font-size: 13.5px; font-weight: 600; }
 .task-body { font-size: 12.5px; color: var(--ma-mute); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .task-x { color: var(--ma-mute); width: 28px; height: 28px; display: grid; place-items: center; }
+
+/* link banner / skeleton (reconnect UX) */
+.link-banner{position:absolute;left:12px;right:12px;top:4px;z-index:30;display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:14px;background:#eaf1ff;color:#1c3d8f;box-shadow:0 6px 20px rgba(47,111,237,.18);font-size:13px}
+.link-banner.link-failed{background:#fff1f0;color:#a12622;box-shadow:0 6px 20px rgba(209,69,59,.18)}
+[data-theme="dark"] .link-banner{background:#172544;color:#b9cffd}
+[data-theme="dark"] .link-banner.link-failed{background:#3a1b1b;color:#ffb4ac}
+.link-title{font-weight:600}
+.link-sub{opacity:.85;font-size:12px;overflow-wrap:anywhere}
+.link-btn{border:0;border-radius:999px;padding:6px 12px;font-weight:600;background:#2f6fed;color:#fff;font-size:12px;white-space:nowrap}
+.link-failed .link-btn:last-child{background:transparent;color:inherit;border:1px solid currentColor}
+.skeleton{border-radius:16px;background:linear-gradient(90deg,#e6ecf7,#f3f6fc,#e6ecf7);background-size:200% 100%;animation:sk 1.4s linear infinite}
+[data-theme="dark"] .skeleton{background:linear-gradient(90deg,#1b2433,#232d40,#1b2433);background-size:200% 100%}
+@keyframes sk{to{background-position:-200% 0}}

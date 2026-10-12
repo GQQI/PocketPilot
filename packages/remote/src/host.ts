@@ -13,6 +13,8 @@ export interface HostOptions {
   /** Called once per successful QR pairing. */
   grant: (name: string, linkSecret: string) => { token: string; deviceId: string };
   hostName: string;
+  /** LAN base URLs of this PC; sent to the phone at pairing so it can reconnect over the LAN without MQTT/WebRTC */
+  lanUrls?: () => string[];
   log?: (message: string) => void;
 }
 
@@ -167,6 +169,7 @@ export class RemoteHost {
 
   private async accept(sub: Sub, offer: SignalMessage, ckey: string): Promise<void> {
     if (!offer.pub || !offer.sdp) return;
+    this.log(`offer received (${sub.kind})`);
     if (sub.kind === "pair") {
       const pairing = this.pairings.get(sub.sid);
       if (!pairing || pairing.used || pairing.expiresAt < Date.now()) return;
@@ -253,7 +256,7 @@ export class RemoteHost {
         pairing.used = true;
         const linkSecret = b64uEncode(randomBytes(32));
         const granted = this.options.grant(frame.name ?? "Phone", linkSecret);
-        void mux.send({ t: "welcome", token: granted.token, deviceId: granted.deviceId, linkSecret, host: this.options.hostName });
+        void mux.send({ t: "welcome", token: granted.token, deviceId: granted.deviceId, linkSecret, host: this.options.hostName, urls: this.options.lanUrls?.() ?? [] });
         setTimeout(() => this.dropPairing(conn.sub.sid), 1000).unref?.();
         return;
       }

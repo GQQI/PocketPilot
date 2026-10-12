@@ -43,6 +43,11 @@ export function AgentPicker({ onPick, sticky = false }: { onPick?: (id: string) 
   );
 }
 
-export function statusLabel(available: boolean, hasHistory: boolean, t: (k: string) => string): string {
-  return available ? t("a.st.ready") : hasHistory ? t("a.st.history") : t("a.st.missing");
+export function statusLabel(available: boolean, hasHistory: boolean, t: (k: string) => string, needKey = false): string {
+  return available ? t("a.st.ready") : hasHistory ? t("a.st.history") : needKey ? t("a.st.needKey") : t("a.st.missing");
+}
+
+/** API-only platforms (no CLI to install): "missing" really means "no key yet". */
+export function needsKey(a: { id: string; available: boolean; keySource: string }): boolean {
+  return !a.available && a.id === "grok" && a.keySource === "none";
 }

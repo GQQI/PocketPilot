@@ -175,7 +175,7 @@ async function restartBridge() {
   startBridge();
 }
 
-function bridgeFetch(method, urlPath, body) {
+function bridgeFetch(method, urlPath, body, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
     const req = http.request({
@@ -183,7 +183,7 @@ function bridgeFetch(method, urlPath, body) {
       port: settings.port,
       path: urlPath,
       method,
-      timeout: 5000,
+      timeout: timeoutMs,
       headers: { "x-pocketpilot-internal": internalToken, ...(payload ? { "content-type": "application/json", "content-length": payload.length } : {}) },
     }, (res) => {
       const chunks = [];
@@ -379,6 +379,59 @@ handle("config:set", async (patch) => {
   await bridgeFetch("POST", "/api/desktop/config", body);
   return bridgeFetch("GET", "/api/desktop/config");
 });
+// ---------- platforms & keys ----------
+// Keys travel renderer -> main -> bridge (loopback, token-protected) and are stored by the bridge in ~/.pocketpilot (current user only).
+// They are never logged and never sent to phones; only the last 4 characters come back.
+const GUIDE_IDS = new Set(["cursor", "grok", "claude-code", "codex", "gemini", "opencode", "deepseek-harness", "trae-cn"]);
+const validPlatform = (id) => typeof id === "string" && /^[a-z0-9-]{2,40}$/.test(id);
+function guidesDir() { return app.isPackaged ? path.join(process.resourcesPath, "guides") : path.join(__dirname, "..", "..", "docs", "api-key-guides"); }
+async function platformConfig() { return bridgeFetch("GET", "/api/desktop/config"); }
+async function saveKey(id, key) {
+  if (!validPlatform(id) || typeof key !== "string" || key.length > 4096) throw new Error("bad input");
+  await bridgeFetch("POST", "/api/desktop/config", { secrets: { [id]: key.trim() } });
+  return platformConfig();
+}
+handle("platforms:list", () => platformConfig());
+handle("platforms:save", (id, key) => saveKey(id, key));
+handle("platforms:test", (id) => {
+  if (!validPlatform(id)) throw new Error("bad input");
+  return bridgeFetch("POST", `/api/desktop/agents/${id}/test`, {}, 45000);
+});
+handle("platforms:import", async (id) => {
+  if (!validPlatform(id)) throw new Error("bad input");
+  const picked = await dialog.showOpenDialog(win, { properties: ["openFile"], filters: [{ name: "Text", extensions: ["txt", "env", "key", "*"] }] });
+  if (picked.canceled || !picked.filePaths[0]) return { canceled: true };
+  const file = picked.filePaths[0];
+  if (fs.statSync(file).size > 16384) throw new Error("file too large");
+  let key = "";
+  for (const raw of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const m = /^(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*["']?([^"'\s]{12,})["']?$/.exec(line) || /^["']?([^"'\s=]{12,})["']?$/.exec(line);
+    if (m) { key = m[1]; break; }
+  }
+  if (!key) throw new Error("文件里没有找到密钥");
+  return { canceled: false, config: await saveKey(id, key) };
+});
+handle("clipboard:read", () => clipboard.readText().trim().slice(0, 4096));
+handle("guide:get", (id) => {
+  if (!GUIDE_IDS.has(id)) throw new Error("no guide");
+  const dir = guidesDir();
+  let md = fs.readFileSync(path.join(dir, id + ".md"), "utf8");
+  md = md.replace(/!\[([^\]]*)\]\((images\/[A-Za-z0-9._-]+)\)/g, (m, alt, rel) => {
+    try {
+      const ext = path.extname(rel).slice(1).toLowerCase();
+      const mime = ext === "svg" ? "svg+xml" : ext === "jpg" ? "jpeg" : ext;
+      return `![${alt}](data:image/${mime};base64,${fs.readFileSync(path.join(dir, rel)).toString("base64")})`;
+    } catch { return `![${alt}]()`; }
+  });
+  return { md };
+});
+handle("shell:url", (url) => {
+  if (typeof url !== "string" || !/^https:\/\/[^\s]+$/.test(url)) return false;
+  return shell.openExternal(url).then(() => true);
+});
+
 handle("dialog:folder", async () => {
   const result = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
   return result.canceled ? null : result.filePaths[0];

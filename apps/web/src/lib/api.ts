@@ -1,4 +1,4 @@
-import type { AgentChatRequest, AgentProject, AgentSession, AgentsOverview, AgentStatus, AgentUsage, Bootstrap, ChatMessage, DeviceView, FsListing, HostView, PairResult, StreamEvent } from "@pocketpilot/protocol";
+import type { AgentChatRequest, AgentTestResult, AgentProject, AgentSession, AgentsOverview, AgentStatus, AgentUsage, Bootstrap, ChatMessage, DeviceView, FsListing, HostView, PairResult, StreamEvent } from "@pocketpilot/protocol";
 
 import { Capacitor } from "@capacitor/core";
 import { migrateLegacyStorage } from "./legacy";
@@ -105,6 +105,7 @@ export const api = {
   agentMessages: (id: string, sid: string, limit: number) => request<ChatMessage[]>(`/api/agents/${id}/sessions/${encodeURIComponent(sid)}/messages?limit=${limit}`),
   agentUsage: (id: string, refresh = false) => request<AgentUsage>(`/api/agents/${id}/usage${refresh ? "?refresh=1" : ""}`),
   agentConfig: (id: string, patch: { cliPath?: string; model?: string; apiKey?: string }) => request<AgentStatus>(`/api/agents/${id}/config`, json(patch)),
+  agentTest: (id: string) => request<AgentTestResult>(`/api/agents/${id}/test`, { method: "POST" }),
   agentChat: (id: string, req: AgentChatRequest, onEvent: (event: StreamEvent) => void, signal: AbortSignal) =>
     stream(`/api/agents/${id}/chat`, req, onEvent, signal),
   privacy: () => request<{ dataDir: string; keepHistory: boolean }>("/api/privacy"),

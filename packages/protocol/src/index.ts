@@ -258,6 +258,8 @@ export interface AgentStatus {
   dataPath: string;
   configuredCliPath: string;
   /** one-line install command for this platform on the host OS ("" = see docs) */
+  /** last 4 chars of the API key in use ("" = none); the key itself never leaves the PC */
+  keyLast4: string;
   installCmd: string;
   checkedAt: string;
 }
@@ -329,4 +331,10 @@ export interface AgentChatRequest {
   cwd: string;
   prompt: string;
   model?: string;
+}
+
+/** Result of a "test connection" (login status / key check) for one platform. */
+export interface AgentTestResult {
+  ok: boolean;
+  message: string;
 }
