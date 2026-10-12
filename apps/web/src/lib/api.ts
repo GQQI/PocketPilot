@@ -9,6 +9,7 @@ migrateLegacyStorage();
 
 const BRIDGE_KEY = "pocketpilot.bridge";
 const TOKEN_KEY = "pocketpilot.token";
+const DEVICE_ID_KEY = "pocketpilot.device";
 
 function readStore(key: string): string {
   try {
@@ -82,7 +83,7 @@ export const api = {
     const previous = readStore(BRIDGE_KEY);
     if (origin !== undefined) writeStore(BRIDGE_KEY, origin.trim().replace(/\/$/, ""));
     try {
-      const result = await request<PairResult>("/api/pair", json({ code, name: deviceName() }));
+      const result = await request<PairResult>("/api/pair", json({ code, name: deviceName(), deviceId: stableDeviceId() }));
       writeStore(TOKEN_KEY, result.token);
       return result;
     } catch (error) {
@@ -91,12 +92,14 @@ export const api = {
     }
   },
   deviceName,
+  stableDeviceId,
   adoptToken: (token: string) => writeStore(TOKEN_KEY, token),
   remoteSession: () => request<{ url: string; expiresAt: number; qrSvg: string }>("/api/remote/session", { method: "POST" }),
   forgetHost: () => {
     forgetRtc();
     writeStore(BRIDGE_KEY, "");
     writeStore(TOKEN_KEY, "");
+    // Keep pocketpilot.device so the same phone is recognized the next time it pairs.
   },
   saveSettings: (patch: unknown) => request<Bootstrap>("/api/settings", json(patch)),
   agents: (refresh = false) => request<AgentsOverview>(`/api/agents${refresh ? "?refresh=1" : ""}`),
@@ -114,10 +117,21 @@ export const api = {
   hostFs: (dir: string) => request<FsListing>(`/api/host/fs?path=${encodeURIComponent(dir)}`),
 };
 
+/** Random id created once on this phone and kept across re-pairs. Not a stand-in for any particular device. */
+export function stableDeviceId(): string {
+  const existing = readStore(DEVICE_ID_KEY);
+  if (/^pp_[0-9a-f]{32}$/.test(existing)) return existing;
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  const id = `pp_${[...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  writeStore(DEVICE_ID_KEY, id);
+  return id;
+}
+
 export function deviceName(): string {
   const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
   const kind = /iPhone|iPad/.test(ua) ? "iPhone" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "Mac" : "Browser";
-  return `${kind} ${new Date().toLocaleDateString()}`;
+  return `${kind} · ${stableDeviceId().slice(-4)}`;
 }
 
 function json(body: unknown): RequestInit {

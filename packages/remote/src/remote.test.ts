@@ -37,14 +37,14 @@ test("ECDH session keys agree, are directional, and reject replay", async () => 
 // even on 127.0.0.1); the same pair connects instantly across two processes. Use scripts/e2e-remote.mjs there.
 test("QR pairing then link reconnect over WebRTC data channel", { timeout: 60_000, skip: process.platform === "win32" && (process.env.POCKETPILOT_FORCE_INPROC ?? process.env.MOBILEAGENT_FORCE_INPROC) !== "1" ? "in-process dual WebRTC peers unsupported on Windows (see scripts/e2e-remote.mjs)" : false }, async () => {
   const bus = new MemoryBus();
-  let granted: { token: string; deviceId: string; linkSecret: string } | undefined;
+  let granted: { token: string; deviceId: string; linkSecret: string; clientId?: string } | undefined;
   const host = new RemoteHost({
     bus,
     RTC,
     iceServers: [],
     hostName: "test-host",
-    grant: (name, linkSecret) => {
-      granted = { token: "tok_" + name, deviceId: "dev1", linkSecret };
+    grant: (name, linkSecret, clientId) => {
+      granted = { token: "tok_" + name, deviceId: "dev1", linkSecret, clientId };
       return { token: granted.token, deviceId: "dev1" };
     },
     fetch: async (request) => {
@@ -74,9 +74,11 @@ test("QR pairing then link reconnect over WebRTC data channel", { timeout: 60_00
   try {
     const pairing = await host.createPairing(60_000);
     const first = mk({ kind: "pair", sid: pairing.sid, secret: pairing.secret });
-    const welcome = await first.pair("phone");
+    const phoneId = "pp_" + "12".repeat(16);
+    const welcome = await first.pair("phone", phoneId);
     assert.equal(welcome.token, "tok_phone");
     assert.equal(welcome.linkSecret, granted?.linkSecret);
+    assert.equal(granted?.clientId, phoneId);
     first.close();
 
     // one-time: second use of the same QR must fail
@@ -84,6 +86,7 @@ test("QR pairing then link reconnect over WebRTC data channel", { timeout: 60_00
     await assert.rejects(reuse.pair("again"));
     reuse.close();
 
+    await host.syncLinks([{ id: "dev1", linkSecret: welcome.linkSecret }]);
     await host.syncLinks([{ id: "dev1", linkSecret: welcome.linkSecret }]);
     const link = mk({ kind: "link", secret: welcome.linkSecret });
     const auth = { authorization: `Bearer ${welcome.token}` };

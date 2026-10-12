@@ -15,7 +15,7 @@ export function PairLanding({ payload }: { payload: string }) {
 
   function run() {
     setState("pairing");
-    pairFromPayload(payload, api.deviceName()).then((token) => {
+    pairFromPayload(payload, api.deviceName(), api.stableDeviceId()).then((token) => {
       api.adoptToken(token);
       setState("done");
       setTimeout(() => window.location.replace("/"), 600);
@@ -145,7 +145,7 @@ export function useScanPair() {
     setBusy(true);
     setOpen(true);
     setError("");
-    pairFromPayload(payload, api.deviceName()).then((token) => {
+    pairFromPayload(payload, api.deviceName(), api.stableDeviceId()).then((token) => {
       api.adoptToken(token);
       window.location.replace("/");
     }).catch((caught: unknown) => {
