@@ -1,14 +1,16 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
-import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent, UsageBucket } from "@pocketpilot/protocol";
+import type { AgentAuth, AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent, UsageBucket } from "@pocketpilot/protocol";
 import { baseName, cap, exists, prettyError, FileCache, findExecutable, globDirs, home, listDir, oneLine, readLines, runCapture, runStream, safeStat, startOfToday, tryJson } from "./util";
 import { dailyTotals, emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 /**
  * Claude Code.
  * History + usage: ~/.claude/projects/<cwd-slug>/<session-id>.jsonl (every line carries cwd, timestamp; assistant lines carry message.usage).
- * Running: `claude -p --output-format stream-json --verbose [--resume <id>]`, prompt on stdin, cwd = project folder.
- * Credentials are never read into PocketPilot; only the *presence* of a key/login is reported.
+ * Running: the Claude Agent SDK `query()` (bundled Claude Code, same path as claudecodeui),
+ * falling back to `claude -p --output-format stream-json`. Both use the local `claude login`
+ * / subscription in ~/.claude. ANTHROPIC_API_KEY is optional and is passed only when the user saved one.
  */
 const projectsRoot = () => path.join(home(), ".claude", "projects");
 
@@ -102,19 +104,18 @@ export const claudeAgent: LocalAgent = {
     }
     const s = settingsEnv();
     const credsFile = path.join(home(), ".claude", ".credentials.json");
-    const auth = ctx.keySource !== "none"
-      ? { state: "ok" as const, source: ctx.keySource, note: "ANTHROPIC_API_KEY" }
-      : s.ANTHROPIC_AUTH_TOKEN || s.ANTHROPIC_API_KEY
-        ? { state: "ok" as const, source: "settings", note: s.ANTHROPIC_BASE_URL ? `~/.claude/settings.json（自定义网关 ${hostOf(s.ANTHROPIC_BASE_URL)}）` : "~/.claude/settings.json" }
-        : process.env.ANTHROPIC_AUTH_TOKEN
-          ? { state: "ok" as const, source: "env", note: "ANTHROPIC_AUTH_TOKEN" }
-          : exists(credsFile)
-            ? { state: "ok" as const, source: "login", note: "Claude 账号登录" }
-            : found
-              ? { state: "unknown" as const, source: "cli", note: "未发现密钥；如已用 claude login 登录，发送时会直接可用" }
-              : { state: "missing" as const, source: "none", note: "未找到 claude，也没有配置密钥" };
-    const canSdk = ctx.keySource !== "none" || Boolean(s.ANTHROPIC_API_KEY || s.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
-    return { cliPath: found ?? (canSdk ? "claude-sdk" : null), version: version ? cap(version, 80) : canSdk && !found ? "Claude Agent SDK" : null, hasHistory: files().length > 0, auth, dataPath: projectsRoot(), defaultModel: s.ANTHROPIC_MODEL || s.__model };
+    const loggedIn = Boolean(s.ANTHROPIC_AUTH_TOKEN || s.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || exists(credsFile));
+    const loginDetail = s.ANTHROPIC_BASE_URL
+      ? `~/.claude/settings.json（${hostOf(s.ANTHROPIC_BASE_URL)}）`
+      : exists(credsFile)
+        ? "Claude account"
+        : s.ANTHROPIC_AUTH_TOKEN || s.ANTHROPIC_API_KEY
+          ? "~/.claude/settings.json"
+          : process.env.ANTHROPIC_AUTH_TOKEN
+            ? "ANTHROPIC_AUTH_TOKEN"
+            : undefined;
+    const runtime = claudeRuntime({ cliFound: Boolean(found), sdkPresent: claudeSdkPresent(), keySource: ctx.keySource, loggedIn, locale: ctx.locale, loginDetail });
+    return { cliPath: found ?? (runtime.runnable ? "claude-sdk" : null), version: version ? cap(version, 80) : runtime.runnable && !found ? "Claude Agent SDK" : null, hasHistory: files().length > 0, auth: runtime.auth, dataPath: projectsRoot(), defaultModel: s.ANTHROPIC_MODEL || s.__model };
   },
 
   async sessions(): Promise<AgentSession[]> {
@@ -183,7 +184,8 @@ export const claudeAgent: LocalAgent = {
       const state: SdkMapState = { sawPartial: false, sessionId: req.sessionId ?? "", openTool: "" };
       let failed = false;
       try {
-        for await (const message of query({ prompt: req.prompt, options: claudeQueryOptions({ cwd: req.cwd, model: req.model, sessionId: req.sessionId }, ctx.env) })) {
+        const sdkEnv = ctx.keySource !== "none" ? ctx.env : undefined;
+        for await (const message of query({ prompt: req.prompt, options: claudeQueryOptions({ cwd: req.cwd, model: req.model, sessionId: req.sessionId }, sdkEnv) })) {
           if (signal.aborted) return;
           for (const event of mapClaudeSdkMessage(message, state)) {
             if (event.type === "error") failed = true;
@@ -314,8 +316,81 @@ export interface SdkMapState {
   openTool: string;
 }
 
-/** Options for `@anthropic-ai/claude-agent-sdk` `query()`. The key stays in `env` (existing secret store), never in source. */
-export function claudeQueryOptions(req: { cwd: string; model?: string; sessionId?: string }, env: NodeJS.ProcessEnv): Record<string, unknown> {
+/**
+ * Whether Claude can run, and how to describe auth.
+ * The Agent SDK and `claude` CLI both use the local Claude Code login. A saved API key is optional.
+ */
+export function claudeRuntime(input: {
+  cliFound: boolean;
+  sdkPresent: boolean;
+  keySource: string;
+  loggedIn: boolean;
+  locale: "zh" | "en";
+  loginDetail?: string;
+}): { runnable: boolean; auth: AgentAuth } {
+  const runnable = input.cliFound || input.sdkPresent;
+  const zh = input.locale !== "en";
+  if (!runnable) {
+    return {
+      runnable: false,
+      auth: {
+        state: "missing",
+        source: "none",
+        note: zh
+          ? "未找到 claude 命令行，也没有 Claude Agent SDK。安装 Claude Code 后用 claude login 登录即可，不需要 API Key。"
+          : "Neither the claude CLI nor the Claude Agent SDK was found. Install Claude Code and run claude login. An API key is not required.",
+      },
+    };
+  }
+  if (input.keySource !== "none") {
+    return {
+      runnable: true,
+      auth: {
+        state: "ok",
+        source: input.keySource,
+        note: zh
+          ? "正在使用你保存的密钥。不保存也可以：本机 claude login 或订阅登录同样能对话。"
+          : "Using the key you saved. A key is optional; a local claude login or subscription works without one.",
+      },
+    };
+  }
+  if (input.loggedIn) {
+    const where = input.loginDetail ? `（${input.loginDetail}）` : "";
+    return {
+      runnable: true,
+      auth: {
+        state: "ok",
+        source: "login",
+        note: zh
+          ? `使用本机 Claude Code 登录${where}，不需要 API Key。`
+          : `Using the local Claude Code login${input.loginDetail ? ` (${input.loginDetail})` : ""}. No API key is required.`,
+      },
+    };
+  }
+  return {
+    runnable: true,
+    auth: {
+      state: "unknown",
+      source: "cli",
+      note: zh
+        ? "将使用本机 Claude Code 登录态，API Key 可选。若尚未登录，请在电脑上运行 claude login。"
+        : "Will use the local Claude Code login. An API key is optional. If you are not signed in, run claude login on this PC.",
+    },
+  };
+}
+
+/** True when the Agent SDK package can be resolved. Does not execute it. */
+export function claudeSdkPresent(): boolean {
+  try {
+    createRequire(import.meta.url).resolve("@anthropic-ai/claude-agent-sdk");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Options for `@anthropic-ai/claude-agent-sdk` `query()`. `env` is attached only when the user configured a key. */
+export function claudeQueryOptions(req: { cwd: string; model?: string; sessionId?: string }, env?: NodeJS.ProcessEnv): Record<string, unknown> {
   return {
     cwd: req.cwd,
     ...(req.model ? { model: req.model } : {}),
@@ -324,7 +399,7 @@ export function claudeQueryOptions(req: { cwd: string; model?: string; sessionId
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
     persistSession: true,
-    env,
+    ...(env ? { env } : {}),
   };
 }
 
@@ -415,7 +490,9 @@ function explain(raw: string, ctx: AgentCtx): string {
     return ctx.locale === "en" ? `Claude Code could not reach its API (${cap(message, 120)}). Check the gateway/proxy in ~/.claude/settings.json is running.` : `Claude Code 连不上它的 API（${cap(message, 120)}）。请检查电脑上 ~/.claude/settings.json 里配置的网关/代理是否在运行。`;
   }
   if (/api key|login|unauthor|authentication|401/i.test(message)) {
-    return ctx.locale === "en" ? `Claude Code is not signed in or has no key: ${cap(message, 200)}` : `Claude Code 未登录或没有密钥：${cap(message, 200)}`;
+    return ctx.locale === "en"
+      ? `Claude Code is not signed in: ${cap(message, 200)}. Run claude login on this PC. Save an API key in Settings only if you want to use one.`
+      : `Claude Code 未登录：${cap(message, 200)}。请在电脑上运行 claude login。只有你想改用 API Key 时，才需要在设置里保存。`;
   }
   return cap(message, 600);
 }

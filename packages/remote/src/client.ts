@@ -71,7 +71,7 @@ export class RemoteClient {
   }
 
   /** QR flow: connect, say hello, receive the device token + persistent link secret. */
-  async pair(name: string): Promise<Welcome> {
+  async pair(name: string, deviceId?: string): Promise<Welcome> {
     await this.connect();
     const mux = this.mux;
     if (!mux) throw new RemoteError("closed", ERROR_HINTS.closed);
@@ -79,7 +79,7 @@ export class RemoteClient {
       this.helloWaiter = { resolve, reject };
       setTimeout(() => reject(new RemoteError("expired", ERROR_HINTS.expired)), 15_000);
     });
-    await mux.send({ t: "hello", name });
+    await mux.send({ t: "hello", name, ...(deviceId ? { deviceId } : {}) });
     return result;
   }
 

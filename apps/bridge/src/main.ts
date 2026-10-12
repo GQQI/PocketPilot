@@ -83,7 +83,11 @@ app.get("/api/host", (c) => c.json(hub.hostInfo({
 })));
 app.post("/api/pair", async (c) => {
   const body = await c.req.json().catch(() => ({ code: "" }));
-  const { token, device } = hub.pair(String(body.code ?? ""), { ip: clientIp(c), name: body.name ? String(body.name) : undefined });
+  const { token, device } = hub.pair(String(body.code ?? ""), {
+    ip: clientIp(c),
+    name: body.name ? String(body.name) : undefined,
+    clientId: body.deviceId ? String(body.deviceId) : undefined,
+  });
   return c.json({
     token,
     device,

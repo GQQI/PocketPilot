@@ -86,6 +86,8 @@ export interface DeviceRecord {
   createdAt: number;
   lastSeen: number;
   expiresAt: number;
+  /** Stable id generated and stored on the phone. Re-pairing with the same value updates this row instead of adding another. */
+  clientId?: string;
   /** Secret for the persisted WebRTC link of this device (remote pairing). Never leaves host.json / the paired phone. */
   linkSecret?: string;
 }
@@ -100,6 +102,14 @@ export interface PairContext {
   ip?: string;
   /** Human readable device name supplied by the phone. */
   name?: string;
+  /** Stable id from the phone. Absent on older clients, which still get a new row. */
+  clientId?: string;
+}
+
+/** Phone-generated ids only. Anything else is ignored so a client cannot address another row by guessing. */
+function cleanClientId(value: string | undefined): string | undefined {
+  const id = (value ?? "").trim();
+  return /^[A-Za-z0-9_-]{16,80}$/.test(id) ? id : undefined;
 }
 
 const MAX_FAILS_PER_IP = 5;
@@ -362,33 +372,45 @@ export class Hub {
       throw new HubError("pairing code rejected", 401, "pair");
     }
     this.fails.delete(key);
-    const token = "mat_" + randomBytes(32).toString("hex");
-    const device: DeviceRecord = {
-      id: "dev_" + randomBytes(6).toString("hex"),
-      name: (context.name ?? "").toString().trim().slice(0, 60) || "Phone",
-      tokenHash: hashToken(token),
-      createdAt: now,
-      lastSeen: now,
-      expiresAt: now + this.tokenTtlMs,
-    };
-    this.hostSecrets.devices.push(device);
+    const issued = this.upsertDevice({ name: context.name ?? "", clientId: context.clientId });
     if (this.remote) this.rotatePairingCode();
-    this.saveHostSecrets();
-    return { token, device: this.deviceView(device, device.id) };
+    return { token: issued.token, device: this.deviceView(issued.device, issued.device.id) };
   }
 
   /** Issue a device token without a pairing code: only for the QR/WebRTC flow that has already proven possession of a one-time secret. */
-  grantDevice(name: string, linkSecret: string): { token: string; device: DeviceRecord } {
+  grantDevice(name: string, linkSecret: string, clientId?: string): { token: string; device: DeviceRecord } {
+    return this.upsertDevice({ name, clientId, linkSecret });
+  }
+
+  /**
+   * One phone, one row. A repeated pair or QR scan with the same client id refreshes the existing
+   * record (token, name, last seen, link) instead of appending another device.
+   */
+  private upsertDevice(input: { name: string; clientId?: string; linkSecret?: string }): { token: string; device: DeviceRecord } {
     const now = Date.now();
     const token = "mat_" + randomBytes(32).toString("hex");
+    const clientId = cleanClientId(input.clientId);
+    const name = input.name.trim().slice(0, 60) || "Phone";
+    const existing = clientId ? this.hostSecrets.devices.find((device) => device.clientId === clientId) : undefined;
+    if (existing) {
+      existing.name = name;
+      existing.tokenHash = hashToken(token);
+      existing.lastSeen = now;
+      existing.expiresAt = now + this.tokenTtlMs;
+      if (input.linkSecret) existing.linkSecret = input.linkSecret;
+      this.saveHostSecrets();
+      this.onDevices?.();
+      return { token, device: existing };
+    }
     const device: DeviceRecord = {
       id: "dev_" + randomBytes(6).toString("hex"),
-      name: name.trim().slice(0, 60) || "Phone",
+      ...(clientId ? { clientId } : {}),
+      name,
       tokenHash: hashToken(token),
       createdAt: now,
       lastSeen: now,
       expiresAt: now + this.tokenTtlMs,
-      linkSecret,
+      ...(input.linkSecret ? { linkSecret: input.linkSecret } : {}),
     };
     this.hostSecrets.devices.push(device);
     this.saveHostSecrets();

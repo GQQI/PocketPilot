@@ -40,8 +40,8 @@ export async function startRemote(hub: Hub, handle: (request: Request) => Respon
     log,
     fetch: handle,
     lanUrls,
-    grant: (name, linkSecret) => {
-      const { token, device } = hub.grantDevice(name, linkSecret);
+    grant: (name, linkSecret, clientId) => {
+      const { token, device } = hub.grantDevice(name, linkSecret, clientId);
       return { token, deviceId: device.id };
     },
   });

@@ -2,7 +2,7 @@ import { b64uDecode, b64uEncode, randomId, SecureChannel } from "./crypto";
 
 /** Application frames carried (encrypted) over the WebRTC data channel. */
 export type Frame =
-  | { t: "hello"; name?: string }
+  | { t: "hello"; name?: string; deviceId?: string }
   | { t: "welcome"; token: string; deviceId: string; linkSecret: string; host: string; urls?: string[] }
   | { t: "req"; id: string; method: string; path: string; headers: Record<string, string>; body?: string }
   | { t: "res"; id: string; status: number; headers: Record<string, string> }

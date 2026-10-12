@@ -123,6 +123,50 @@ test("pairing issues per-device tokens that can be revoked", async () => {
   }
 });
 
+test("the same phone updates one device instead of adding another", async () => {
+  const { dir, hub } = await tmpHub({ remote: false });
+  try {
+    const phone = "pp_" + "ab".repeat(16);
+    const other = "pp_" + "cd".repeat(16);
+    const first = hub.pair(hub.pairingCode(), { name: "Phone · abab", ip: "1.1.1.1", clientId: phone });
+    const again = hub.pair(hub.pairingCode(), { name: "Phone · abab", ip: "1.1.1.1", clientId: phone });
+    assert.equal(hub.listDevices().length, 1);
+    assert.equal(again.device.id, first.device.id);
+    assert.ok(again.device.lastSeen >= first.device.lastSeen);
+    assert.equal(hub.tokenMatches(`Bearer ${first.token}`), false);
+    assert.equal(hub.tokenMatches(`Bearer ${again.token}`), true);
+
+    const pixel = hub.pair(hub.pairingCode(), { name: "Pixel", ip: "1.1.1.2", clientId: other });
+    assert.notEqual(pixel.device.id, first.device.id);
+    assert.equal(hub.listDevices().length, 2);
+
+    const ignored = hub.pair(hub.pairingCode(), { name: "Old app", ip: "1.1.1.3", clientId: "not-a-real-id" });
+    const unnamed = hub.pair(hub.pairingCode(), { name: "Also old", ip: "1.1.1.4" });
+    assert.equal(hub.listDevices().length, 4);
+    assert.notEqual(ignored.device.id, unnamed.device.id);
+
+    const linked = hub.grantDevice("Phone · abab", "link-secret-1", phone);
+    assert.equal(linked.device.id, first.device.id);
+    assert.equal(hub.deviceLinks().length, 1);
+    assert.equal(hub.deviceLinks()[0]?.linkSecret, "link-secret-1");
+    const relinked = hub.grantDevice("Phone · abab", "link-secret-2", phone);
+    assert.equal(hub.listDevices().length, 4);
+    assert.equal(hub.deviceLinks().length, 1);
+    assert.equal(hub.deviceLinks()[0]?.id, first.device.id);
+    assert.equal(hub.deviceLinks()[0]?.linkSecret, "link-secret-2");
+    assert.equal(hub.tokenMatches(`Bearer ${linked.token}`), false);
+    assert.equal(hub.tokenMatches(`Bearer ${relinked.token}`), true);
+
+    const lan = hub.pair(hub.pairingCode(), { name: "Phone · abab", clientId: phone });
+    assert.equal(hub.listDevices().length, 4);
+    assert.equal(hub.deviceLinks()[0]?.linkSecret, "link-secret-2");
+    assert.equal(hub.tokenMatches(`Bearer ${lan.token}`), true);
+    assert.equal(hub.tokenMatches(`Bearer ${relinked.token}`), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
 test("device tokens expire", async () => {
   const { dir, hub } = await tmpHub({ remote: false, tokenTtlDays: 0.00000001 });
   try {

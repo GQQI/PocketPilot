@@ -230,14 +230,15 @@ function ConnectionSection({ agent }: { agent: AgentStatus }) {
           <dt>{t("set.version")}</dt><dd>{agent.version ?? "—"}</dd>
           <dt>{t("set.auth")}</dt><dd><span className={`dot ${agent.auth.state === "ok" ? "dot-ok" : agent.auth.state === "missing" ? "dot-off" : "dot-run"}`} /> {authText}<div className="text-xs text-mute">{agent.auth.note}</div></dd>
         </dl>
-        {agent.auth.state !== "ok" && agent.cliPath ? <p className="mt-3 text-xs text-mute">{t("i.step2", { login: LOGIN[agent.id] ?? agent.cli })}</p> : null}
+        {agent.auth.state !== "ok" && agent.cliPath ? <p className="mt-3 text-xs text-mute">{t(agent.id === "claude-code" ? "i.step2claude" : "i.step2", { login: LOGIN[agent.id] ?? agent.cli })}</p> : null}
         <Button className="mt-3" size="sm" variant="soft" onClick={() => void refreshAgents(true)}>{t("a.recheck")}</Button>
       </section>
       {agent.envKeys.length > 0 ? (
         <section className="panel mt-4 p-4">
           <h2 className="!text-base font-semibold">{t("set.key")}</h2>
           <p className="mt-1 text-xs text-mute">{agent.envKeys.join(" / ")} · {t("set.keyFrom")}: {agent.keySource}</p>
-          <p className="mt-2 text-sm font-medium" data-testid="key-state">{agent.keyLast4 ? t("set.keyMasked", { last4: agent.keyLast4 }) : t("set.keyNone")}</p>
+          <p className="mt-2 text-sm font-medium" data-testid="key-state">{agent.keyLast4 ? t("set.keyMasked", { last4: agent.keyLast4 }) : agent.id === "claude-code" ? t("set.keyClaude") : t("set.keyNone")}</p>
+          {agent.id === "claude-code" ? <p className="mt-1 text-xs text-mute" data-testid="key-optional">{t("set.keyOptionalClaude")}</p> : null}
           {result ? <p className="mt-1 text-sm" style={{ color: result.ok ? "#1a8f4c" : "#d1453b" }} data-testid="key-test">{result.message}</p> : null}
           <Input className="mt-2" type="password" autoComplete="off" value={key} placeholder={t("set.keyPh")} onChange={(event) => setKey(event.target.value)} />
           <div className="mt-3 flex gap-2">
@@ -354,7 +355,7 @@ function InstallGuide({ agent }: { agent: AgentStatus }) {
           </div>
         </>
       ) : null}
-      <p className="mt-3 text-sm">{t("i.step2", { login: LOGIN[agent.id] ?? agent.cli })}</p>
+      <p className="mt-3 text-sm">{t(agent.id === "claude-code" ? "i.step2claude" : "i.step2", { login: LOGIN[agent.id] ?? agent.cli })}</p>
       <p className="mt-1 text-sm">{t("i.step3")}</p>
       {agent.id === "cursor" ? <p className="mt-3 text-xs text-mute">{t("i.ideNote")}</p> : null}
       <div className="mt-3"><a className="text-sm text-accent" href={agent.docsUrl} target="_blank" rel="noreferrer">{t("i.docs")}</a></div>

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { directoryParent } from "./browse";
-import { claudeQueryOptions, mapClaudeSdkMessage, type SdkMapState } from "./local/claude";
+import { claudeAgent, claudeQueryOptions, claudeRuntime, mapClaudeSdkMessage, setClaudeQueryForTests, type SdkMapState } from "./local/claude";
 import { isInternalCodexSession } from "./local/codex";
 import { dedupeSessions } from "./local/dedupe";
 import { classifyXaiFailure, groupTraeRecords, xaiDeltaEvents } from "./local/more";
@@ -77,8 +77,63 @@ test("Claude SDK query options stream partials and resume", () => {
   assert.equal(options.permissionMode, "bypassPermissions");
   assert.equal(options.allowDangerouslySkipPermissions, true);
   assert.equal((options.env as NodeJS.ProcessEnv).ANTHROPIC_API_KEY, "from-store");
-  const fresh = claudeQueryOptions({ cwd: "/tmp" }, {});
+  const fresh = claudeQueryOptions({ cwd: "/tmp" });
   assert.equal("resume" in fresh, false);
+  assert.equal("env" in fresh, false);
+});
+
+test("Claude is runnable from a local login and treats the API key as optional", () => {
+  const missing = claudeRuntime({ cliFound: false, sdkPresent: false, keySource: "none", loggedIn: false, locale: "zh" });
+  assert.equal(missing.runnable, false);
+  assert.equal(missing.auth.state, "missing");
+  assert.match(missing.auth.note, /不需要 API Key/);
+  assert.equal(/必须/.test(missing.auth.note), false);
+
+  const local = claudeRuntime({ cliFound: false, sdkPresent: true, keySource: "none", loggedIn: true, locale: "zh", loginDetail: "Claude account" });
+  assert.equal(local.runnable, true);
+  assert.equal(local.auth.state, "ok");
+  assert.equal(local.auth.source, "login");
+  assert.match(local.auth.note, /不需要 API Key/);
+
+  const unsigned = claudeRuntime({ cliFound: true, sdkPresent: false, keySource: "none", loggedIn: false, locale: "en" });
+  assert.equal(unsigned.runnable, true);
+  assert.equal(unsigned.auth.state, "unknown");
+  assert.match(unsigned.auth.note, /optional/i);
+
+  const saved = claudeRuntime({ cliFound: true, sdkPresent: true, keySource: "file", loggedIn: false, locale: "en" });
+  assert.equal(saved.auth.state, "ok");
+  assert.equal(saved.auth.source, "file");
+  assert.match(saved.auth.note, /optional/i);
+});
+
+test("Claude query receives a key only when the user configured one", async () => {
+  let seen: Record<string, unknown> | undefined;
+  setClaudeQueryForTests(async function* (args) {
+    seen = args.options;
+    yield { type: "result", session_id: "s", result: "ok" };
+  });
+  const ctx = { cliPath: "claude", model: "", dataDir: "/tmp", locale: "zh" as const };
+  try {
+    const withoutKey = [];
+    for await (const event of claudeAgent.chat(
+      { prompt: "hi", cwd: "/tmp" },
+      "claude-sdk",
+      { ...ctx, env: { ANTHROPIC_API_KEY: "should-not-pass" }, keySource: "none" },
+      new AbortController().signal,
+    )) withoutKey.push(event);
+    assert.equal("env" in (seen ?? {}), false);
+    assert.equal(withoutKey.some((event) => event.type === "done"), true);
+
+    for await (const event of claudeAgent.chat(
+      { prompt: "hi", cwd: "/tmp" },
+      "claude",
+      { ...ctx, env: { ANTHROPIC_API_KEY: "from-store" }, keySource: "file" },
+      new AbortController().signal,
+    )) void event;
+    assert.equal((seen?.env as NodeJS.ProcessEnv | undefined)?.ANTHROPIC_API_KEY, "from-store");
+  } finally {
+    setClaudeQueryForTests(null);
+  }
 });
 
 test("Claude SDK partial messages become text, thinking and tool events", () => {
