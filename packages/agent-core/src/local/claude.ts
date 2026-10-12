@@ -148,7 +148,11 @@ export const claudeAgent: LocalAgent = {
           for (const b of content as Record<string, unknown>[]) {
             if (b.type === "tool_result") {
               const t = tools.get(String(b.tool_use_id));
-              if (t) t.status = b.is_error === true ? "error" : "done";
+              if (t) {
+                t.status = b.is_error === true ? "error" : "done";
+                const output = textOf(b.content);
+                if (output.trim()) t.output = cap(output, 20000);
+              }
             }
           }
         }
@@ -163,11 +167,12 @@ export const claudeAgent: LocalAgent = {
         }
         for (const b of Array.isArray(content) ? (content as Record<string, unknown>[]) : []) {
           if (b.type === "text" && typeof b.text === "string" && b.text.trim()) current.blocks.push({ type: "text", text: cap(b.text, 20000) });
-          else if (b.type === "thinking" && typeof b.thinking === "string" && b.thinking.trim()) current.blocks.push({ type: "thinking", text: cap(b.thinking, 4000) });
+          else if (b.type === "thinking" && typeof b.thinking === "string" && b.thinking.trim()) current.blocks.push({ type: "thinking", text: cap(b.thinking, 20000) });
           else if (b.type === "tool_use") {
             const input = (b.input ?? {}) as Record<string, unknown>;
             const detail = String(input.file_path ?? input.command ?? input.pattern ?? input.path ?? input.description ?? JSON.stringify(input));
-            const block: MessageBlock & { type: "tool" } = { type: "tool", name: String(b.name ?? "tool"), detail: oneLine(detail, 140), status: "running" };
+            const preview = cap(JSON.stringify(input, null, 2), 20000);
+            const block: MessageBlock & { type: "tool" } = { type: "tool", name: String(b.name ?? "tool"), detail: oneLine(detail, 160), status: "running", ...(preview && preview !== "{}" ? { input: preview } : {}) };
             tools.set(String(b.id), block);
             current.blocks.push(block);
           }

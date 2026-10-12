@@ -75,7 +75,7 @@ export class LocalAgents {
       cliPath: detection.cliPath,
       version: detection.version,
       hasHistory: detection.hasHistory,
-      detected: installed || detection.hasHistory,
+      detected: installed || detection.hasHistory || detection.seen === true,
       available: installed,
       auth: detection.auth,
       defaultModel: ctx.model || detection.defaultModel || meta.defaultModel,
@@ -91,6 +91,7 @@ export class LocalAgents {
       keyLast4: ctx.keySource !== "none" ? (meta.envKeys.map((k) => ctx.env[k]).find(Boolean) ?? "").slice(-4) : "",
       installCmd: INSTALL[id]?.[process.platform === "win32" ? "win" : "unix"] ?? "",
       checkedAt: new Date().toISOString(),
+      ...(detection.historyNote ? { historyNote: detection.historyNote } : {}),
     };
     this.detectCache.set(id, { at: Date.now(), value });
     return value;
@@ -181,6 +182,8 @@ export class LocalAgents {
       yield { type: "error", message: ctx.locale === "en" ? `Project folder not found on this PC: ${cwd || "(empty)"}` : `电脑上找不到这个项目目录：${cwd || "（未选择）"}` };
       return;
     }
+    // Open the SSE response before detection. A cold `cursor-agent status` / `--list-models` used to run first, so the phone sat on a blank turn.
+    yield { type: "status", status: ctx.locale === "en" ? "Running on your PC…" : "正在电脑上运行…" };
     let status = await this.status(id);
     if (!status.cliPath) status = await this.status(id, true);
     if (!status.cliPath) {
@@ -193,11 +196,10 @@ export class LocalAgents {
       };
       return;
     }
-    yield { type: "status", status: ctx.locale === "en" ? "Running on your PC…" : "正在电脑上运行…" };
     try {
       yield* agent.chat({ ...req, prompt, cwd, model: req.model || ctx.model || undefined }, status.cliPath, ctx, signal);
     } finally {
-      this.invalidate(id);
+      this.sessionCache.delete(id);
     }
   }
 }

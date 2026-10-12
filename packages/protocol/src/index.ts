@@ -109,7 +109,7 @@ export interface Session {
 export type MessageBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
-  | { type: "tool"; name: string; detail: string; status: "running" | "done" | "error" };
+  | { type: "tool"; name: string; detail: string; status: "running" | "done" | "error"; input?: string; output?: string };
 
 export interface ChatMessage {
   id: string;
@@ -123,7 +123,7 @@ export type StreamEvent =
   | { type: "status"; status: string }
   | { type: "text"; delta: string }
   | { type: "thinking"; delta: string }
-  | { type: "tool"; phase: "start" | "done"; name: string; detail: string }
+  | { type: "tool"; phase: "start" | "done"; name: string; detail: string; input?: string; output?: string }
   | { type: "usage"; input: number; output: number }
   | { type: "session"; id: string }
   | { type: "done" }
@@ -262,6 +262,8 @@ export interface AgentStatus {
   keyLast4: string;
   installCmd: string;
   checkedAt: string;
+  /** Why history is empty even though the app is installed (for example an encrypted store). */
+  historyNote?: string;
 }
 
 export interface AgentsOverview {

@@ -18,6 +18,26 @@ const traeDirs = () => {
 };
 const traeCliRoot = () => path.join(process.env.TRAE_HOME || path.join(home(), ".trae"), "cli", "sessions");
 
+/** Plaintext session roots. The IDE database is not one of them. */
+export function traeSessionRoots(env: NodeJS.ProcessEnv = process.env, homeDir = home()): string[] {
+  const local = env.LOCALAPPDATA ?? path.join(homeDir, "AppData", "Local");
+  const roots = [
+    path.join(env.TRAE_HOME || path.join(homeDir, ".trae"), "cli", "sessions"),
+    env.TRAECLI_HOME ? path.join(env.TRAECLI_HOME, "sessions") : "",
+    path.join(homeDir, ".trae-cn", "cli", "sessions"),
+    path.join(homeDir, ".cache", "coco", "sessions"),
+    path.join(local, "coco", "sessions"),
+  ];
+  return [...new Set(roots.filter(Boolean))];
+}
+
+export function traeHistoryNote(input: { readableSessions: number; encryptedDb: boolean; locale: "zh" | "en" }): string {
+  if (input.readableSessions > 0 || !input.encryptedDb) return "";
+  return input.locale === "en"
+    ? "Trae CN keeps IDE chats in an encrypted database (ModularData/ai-agent/database.db, SQLCipher). PocketPilot cannot decrypt it, so those chats are not listed and none are invented. TRAE CLI sessions are plain JSONL under ~/.trae/cli/sessions (or TRAE_HOME / TRAECLI_HOME) and show up here."
+    : "Trae CN 编辑器里的会话在加密库 ModularData/ai-agent/database.db（SQLCipher）中。PocketPilot 不能解密，所以不会列出这些会话，也不会编造记录。TRAE CLI 的明文会话在 ~/.trae/cli/sessions（或 TRAE_HOME、TRAECLI_HOME），能读到就会出现在这里。";
+}
+
 function traeWorkspaces(): string[] {
   const out: string[] = [];
   for (const base of traeDirs()) {
@@ -54,8 +74,12 @@ function traeRollouts(): { file: string; id: string; threadHint: string; mtime: 
       out.push({ file: full, id, threadHint: parentUuid || fileUuid || id, mtime: st.mtimeMs });
     }
   };
-  walk(traeCliRoot(), 0);
+  for (const root of traeSessionRoots()) if (exists(root)) walk(root, 0);
   return out;
+}
+
+function traeEncryptedDb(): boolean {
+  return traeDirs().some((base) => exists(path.join(base, "ModularData", "ai-agent", "database.db")));
 }
 
 export interface TraeRecord {
@@ -132,14 +156,17 @@ export const traeAgent: LocalAgent = {
       version = (r.stdout || r.stderr).split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? null;
     }
     const ide = traeDirs().length > 0;
+    const readable = traeRollouts().length;
+    const encrypted = traeEncryptedDb();
     const jwt = exists(path.join(home(), ".trae-cn", "trae-jwt-token")) || exists(path.join(home(), ".trae", "trae-jwt-token"));
     const zh = ctx.locale !== "en";
+    const locked = traeHistoryNote({ readableSessions: readable, encryptedDb: encrypted, locale: ctx.locale });
     const auth = found
       ? { state: "unknown" as const, source: "cli", note: zh ? "登录状态由 traecli 自己保存；未登录时发送会提示运行 traecli login" : "Login is stored by traecli; run `traecli login` if sending fails" }
       : ide
-        ? { state: jwt ? ("ok" as const) : ("unknown" as const), source: "ide", note: zh ? `Trae CN 编辑器${jwt ? "已登录（只检查令牌文件是否存在，不读取内容）" : "（未发现登录令牌）"}。编辑器没有命令行或接口可从手机调用，只能读取已打开的项目` : "Trae CN IDE found; it exposes no CLI/API to drive from the phone" }
+        ? { state: jwt ? ("ok" as const) : ("unknown" as const), source: "ide", note: locked || (zh ? `Trae CN 编辑器${jwt ? "已登录（只检查令牌文件是否存在，不读取内容）" : "（未发现登录令牌）"}。编辑器没有命令行或接口可从手机调用` : "Trae CN IDE found; it exposes no CLI/API to drive from the phone") }
         : { state: "missing" as const, source: "none", note: zh ? "未发现 Trae CN 或 TRAE CLI" : "Neither Trae CN nor TRAE CLI found" };
-    return { cliPath: found, version: version ? cap(version, 80) : null, hasHistory: ide || traeRollouts().length > 0, auth, dataPath: traeDirs()[0] ?? traeCliRoot() };
+    return { cliPath: found, version: version ? cap(version, 80) : null, hasHistory: readable > 0, seen: ide || readable > 0, historyNote: locked, auth, dataPath: traeDirs()[0] ?? traeCliRoot() };
   },
   async sessions(): Promise<AgentSession[]> {
     const records: TraeRecord[] = [];
@@ -168,11 +195,25 @@ export const traeAgent: LocalAgent = {
     for (const r of files) for await (const line of readLines(r.file)) {
       const j = tryJson(line);
       const p = j?.payload as Record<string, unknown> | undefined;
-      if (j?.type !== "response_item" || p?.type !== "message") continue;
-      const role = p.role === "user" ? "user" : p.role === "assistant" ? "assistant" : null;
+      if (j?.type !== "response_item" || !p) continue;
+      const createdAt = String(j.timestamp ?? "");
+      if (p.type === "reasoning" || p.type === "thinking") {
+        const thought = msgText(p.content).trim() || (typeof p.text === "string" ? p.text.trim() : "");
+        if (thought) out.push({ id: `${sessionId}_${n++}`, role: "assistant", createdAt, blocks: [{ type: "thinking", text: cap(thought, 20000) }] });
+        continue;
+      }
+      if (p.type === "function_call" || p.type === "tool_call" || p.type === "tool_use") {
+        const name = String(p.name ?? "tool");
+        const input = typeof p.arguments === "string" ? p.arguments : typeof p.input === "string" ? p.input : "";
+        const output = typeof p.output === "string" ? p.output : "";
+        out.push({ id: `${sessionId}_${n++}`, role: "assistant", createdAt, blocks: [{ type: "tool", name, detail: oneLine(input || name, 160), status: "done", ...(input ? { input: cap(input, 20000) } : {}), ...(output ? { output: cap(output, 20000) } : {}) }] });
+        continue;
+      }
+      if (p.type !== "message") continue;
+      const role = p.role === "user" ? "user" as const : p.role === "assistant" ? "assistant" as const : null;
       const text = msgText(p.content).trim();
       if (!role || !text || (role === "user" && text.startsWith("<"))) continue;
-      out.push({ id: `${sessionId}_${n++}`, role, createdAt: String(j?.timestamp ?? ""), blocks: [{ type: "text", text: cap(text, 20000) }] });
+      out.push({ id: `${sessionId}_${n++}`, role, createdAt, blocks: [{ type: "text", text: cap(text, 20000) }] });
     }
     return out.slice(-limit);
   },
@@ -212,7 +253,7 @@ export const traeAgent: LocalAgent = {
 const XAI = "https://api.x.ai/v1";
 const GROK_STORE = "grok-chats.json";
 const GROK_USAGE = "grok-usage.jsonl";
-interface GrokChat { id: string; cwd: string; title: string; updatedAt: string; messages: { role: "user" | "assistant"; text: string; at: string }[] }
+interface GrokChat { id: string; cwd: string; title: string; updatedAt: string; messages: { role: "user" | "assistant"; text: string; at: string; thinking?: string }[] }
 
 function grokRead(dir: string): GrokChat[] {
   try { return JSON.parse(readFileSync(path.join(dir, GROK_STORE), "utf8")) as GrokChat[]; } catch { return []; }
@@ -223,7 +264,7 @@ function grokWrite(dir: string, list: GrokChat[]): void {
 }
 
 /** Persist the turn even when the API fails, so the session still shows up in history. */
-function grokRemember(dir: string, id: string, cwd: string, prompt: string, assistant: string | null): void {
+function grokRemember(dir: string, id: string, cwd: string, prompt: string, assistant: string | null, thinking = ""): void {
   if (exists(path.join(dir, "no-history"))) return;
   try {
     const list = grokRead(dir);
@@ -238,8 +279,8 @@ function grokRemember(dir: string, id: string, cwd: string, prompt: string, assi
     }
     if (assistant !== null) {
       const last = chat.messages.at(-1);
-      if (last?.role === "assistant") last.text = assistant;
-      else chat.messages.push({ role: "assistant", text: assistant, at: now });
+      if (last?.role === "assistant") { last.text = assistant; if (thinking) last.thinking = thinking; }
+      else chat.messages.push({ role: "assistant", text: assistant, at: now, ...(thinking ? { thinking } : {}) });
     }
     chat.updatedAt = now;
     grokWrite(dir, list);
@@ -288,18 +329,47 @@ export function xaiDeltaEvents(delta: { content?: string; reasoning_content?: st
   }
   return events;
 }
-let grokModels: { at: number; key: string; list: string[] } | null = null;
+export interface XaiProbe { ok: boolean; models: string[]; status?: number; error?: unknown }
 
-async function xaiModels(key: string): Promise<string[]> {
-  if (grokModels && grokModels.key === key && Date.now() - grokModels.at < 600_000) return grokModels.list;
+/**
+ * A saved key counts as ready only after api.x.ai accepts it.
+ * No key: the local grok CLI can still run. A failed probe is not "ready".
+ */
+export function grokRuntime(input: { cliFound: boolean; hasKey: boolean; probe: XaiProbe | null; locale: "zh" | "en" }): { runnable: boolean; models: string[]; auth: { state: "ok" | "missing" | "unknown"; source: string; note: string } } {
+  const zh = input.locale !== "en";
+  if (input.hasKey) {
+    if (input.probe?.ok) {
+      const n = input.probe.models.length;
+      return { runnable: true, models: input.probe.models, auth: { state: "ok", source: "env", note: zh ? `已连通 api.x.ai，密钥有效${n ? `，${n} 个模型` : ""}。` : `Reached api.x.ai with a valid key${n ? `, ${n} models` : ""}.` } };
+    }
+    const note = classifyXaiFailure({ key: "configured", error: input.probe?.error, status: input.probe?.status, locale: input.locale });
+    const authFail = input.probe?.status === 401 || input.probe?.status === 403;
+    return { runnable: false, models: [], auth: { state: authFail ? "missing" : "unknown", source: "none", note: zh ? `${note} 因此不会标成可对话。` : `${note} Not marked ready.` } };
+  }
+  if (input.cliFound) return { runnable: true, models: [], auth: { state: "unknown", source: "cli", note: zh ? "未配置 XAI_API_KEY，将使用本机 grok 登录。API 模式只有连上 api.x.ai 且密钥有效才会标成可对话。" : "No XAI_API_KEY, so the local grok login is used. API mode is ready only when api.x.ai accepts a key." } };
+  return { runnable: false, models: [], auth: { state: "missing", source: "none", note: zh ? "没有 XAI_API_KEY，也没找到 grok 命令行。" : "No XAI_API_KEY and no grok CLI." } };
+}
+
+let xaiProbeCache: { at: number; key: string; probe: XaiProbe } | null = null;
+
+async function probeXai(key: string): Promise<XaiProbe> {
+  const now = Date.now();
+  if (xaiProbeCache && xaiProbeCache.key === key && now - xaiProbeCache.at < (xaiProbeCache.probe.ok ? 60_000 : 15_000)) return xaiProbeCache.probe;
+  let probe: XaiProbe;
   try {
-    const res = await fetch(`${XAI}/models`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return [];
-    const j = (await res.json()) as { data?: { id?: string }[] };
-    const list = (j.data ?? []).map((m) => String(m.id)).filter(Boolean);
-    grokModels = { at: Date.now(), key, list };
-    return list;
-  } catch { return []; }
+    const res = await fetch(`${XAI}/models`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(8_000) });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      probe = { ok: false, models: [], status: res.status, error: new Error(body.includes(key) ? `HTTP ${res.status}` : body.slice(0, 180)) };
+    } else {
+      const j = (await res.json().catch(() => ({}))) as { data?: { id?: string }[] };
+      probe = { ok: true, models: (j.data ?? []).map((m) => String(m.id ?? "")).filter(Boolean) };
+    }
+  } catch (error) {
+    probe = { ok: false, models: [], error };
+  }
+  xaiProbeCache = { at: now, key, probe };
+  return probe;
 }
 
 export const grokAgent: LocalAgent = {
@@ -314,20 +384,15 @@ export const grokAgent: LocalAgent = {
       version = (r.stdout || r.stderr).split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? null;
     }
     const key = ctx.env.XAI_API_KEY ?? "";
-    const zh = ctx.locale !== "en";
-    const models = key ? await xaiModels(key) : [];
-    const auth = key
-      ? { state: "ok" as const, source: ctx.keySource, note: zh ? "XAI_API_KEY（xAI API 对话；只有文字对话，不能读写项目文件）" : "XAI_API_KEY (xAI API chat; no file tools)" }
-      : found
-        ? { state: "unknown" as const, source: "cli", note: zh ? "登录由 grok 自己保存（grok login）；或在下方保存 XAI_API_KEY 走 API" : "Sign in with `grok login`, or save XAI_API_KEY below" }
-        : { state: "missing" as const, source: "none", note: zh ? "没有 XAI_API_KEY，也没找到 grok 命令行" : "No XAI_API_KEY and no grok CLI" };
+    const probe = key ? await probeXai(key) : null;
+    const runtime = grokRuntime({ cliFound: Boolean(found), hasKey: Boolean(key), probe, locale: ctx.locale });
     return {
-      cliPath: key && !found ? "xai-api" : found,
-      version: key && !found ? "xAI API" : version ? cap(version, 80) : null,
+      cliPath: runtime.runnable ? (key ? found ?? "xai-api" : found) : null,
+      version: runtime.runnable && key && !found ? "xAI API" : version ? cap(version, 80) : null,
       hasHistory: grokRead(ctx.dataDir).length > 0,
-      auth,
+      auth: runtime.auth,
       dataPath: path.join(ctx.dataDir, GROK_STORE),
-      models,
+      models: runtime.models,
     };
   },
   async test(ctx, _cli): Promise<AgentTestResult> {
@@ -338,7 +403,7 @@ export const grokAgent: LocalAgent = {
       const res = await fetch(`${XAI}/models`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) });
       if (res.ok) {
         const j = (await res.json().catch(() => ({}))) as { data?: unknown[] };
-        grokModels = null;
+        xaiProbeCache = null;
         const n = j.data?.length ?? 0;
         return { ok: true, message: zh ? `连接成功，密钥有效，可用模型 ${n} 个。` : `Connected. The key is valid, ${n} models available.` };
       }
@@ -355,7 +420,15 @@ export const grokAgent: LocalAgent = {
   async extraProjects(): Promise<string[]> { return []; },
   async messages(sessionId, limit, ctx): Promise<ChatMessage[]> {
     const c = grokRead(ctx.dataDir).find((x) => x.id === sessionId);
-    return (c?.messages ?? []).slice(-limit).map((m, i) => ({ id: `${sessionId}_${i}`, role: m.role, createdAt: m.at, blocks: [{ type: "text" as const, text: m.text }] }));
+    return (c?.messages ?? []).slice(-limit).map((m, i) => ({
+      id: `${sessionId}_${i}`,
+      role: m.role,
+      createdAt: m.at,
+      blocks: [
+        ...(m.thinking ? [{ type: "thinking" as const, text: m.thinking }] : []),
+        ...(m.text.trim() ? [{ type: "text" as const, text: m.text }] : []),
+      ],
+    })).filter((m) => m.blocks.length);
   },
   async *chat(req: AgentChatRequest, cli: string, ctx: AgentCtx, signal: AbortSignal): AsyncGenerator<StreamEvent> {
     const key = ctx.env.XAI_API_KEY ?? "";
@@ -441,8 +514,8 @@ export const grokAgent: LocalAgent = {
         if (j?.usage) usage = j.usage as XUsage;
       }
     }
-    const stored = answer || (thinking ? `（思考）${oneLine(thinking, 500)}` : "(no output)");
-    grokRemember(ctx.dataDir, id, req.cwd, req.prompt, stored);
+    const stored = answer || (thinking ? "" : "(no output)");
+    grokRemember(ctx.dataDir, id, req.cwd, req.prompt, stored, thinking);
     try {
       if (usage) appendFileSync(path.join(ctx.dataDir, GROK_USAGE), JSON.stringify({ t: Date.now(), model, i: usage.prompt_tokens ?? 0, o: usage.completion_tokens ?? 0, c: typeof usage.cost_in_usd_ticks === "number" ? usage.cost_in_usd_ticks / 1e10 : null }) + "\n");
     } catch { /* best effort */ }
