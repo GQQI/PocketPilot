@@ -6,15 +6,21 @@ import type {
   FileContent,
   FileEntry,
   HealthReport,
+  MessageBlock,
   McpServer,
   Project,
   QueueItem,
   Session,
+  StreamEvent,
   TerminalEvent,
 } from "@mobileagent/protocol";
 import { launchArgs, type CatalogEntry } from "./catalog";
+import { streamClaudeSdk } from "./claude-sdk";
 import { HubError } from "./errors";
+import { explainGrokFailure, streamGrok, type GrokTurn } from "./grok";
 import { resolveInside } from "./paths";
+import { createCliMapper } from "./stream-map";
+import { blocksFromEvents } from "./text";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".mobileagent"]);
 const SKIP_FILES = new Set([".env", ".env.local", "secrets.json"]);
@@ -23,6 +29,8 @@ export interface LiveSnapshot {
   sessions: Session[];
   messages: Record<string, ChatMessage[]>;
   queue: QueueItem[];
+  /** Provider session ids (Claude Agent SDK) keyed by our session id. */
+  externalIds?: Record<string, string>;
 }
 
 export interface LiveContext {
@@ -73,6 +81,7 @@ export class LiveEngine {
   }
 
   async health(meta: CatalogEntry, ctx: LiveContext): Promise<HealthReport> {
+    if (meta.id === "grok") return grokHealth(meta, ctx);
     const started = Date.now();
     const result = await collect(ctx.cliPath || meta.cli, ["--version"], ctx.env, ctx.workspacePath || process.cwd(), 4000);
     const missing = result.error?.includes("ENOENT") || result.error?.toLowerCase().includes("not found");
@@ -123,13 +132,13 @@ export class LiveEngine {
     return session;
   }
 
-  async *prompt(sessionId: string, prompt: string, signal: AbortSignal): AsyncGenerator<import("@mobileagent/protocol").StreamEvent> {
+  async *prompt(sessionId: string, prompt: string, signal: AbortSignal): AsyncGenerator<StreamEvent> {
     const text = prompt.trim();
     if (!text) throw new HubError("empty prompt", 400, "empty");
     const session = this.requireSession(sessionId);
     if (this.running.has(sessionId)) throw new HubError("session is busy", 409, "busy");
     const ctx = this.options.context(session.providerId);
-    if (!ctx.workspacePath) throw new HubError("workspace path is empty", 400, "workspace");
+    if (!ctx.workspacePath && session.providerId !== "grok") throw new HubError("workspace path is empty", 400, "workspace");
     this.running.add(sessionId);
     session.status = "running";
     const user: ChatMessage = {
@@ -143,47 +152,91 @@ export class LiveEngine {
     session.preview = text.slice(0, 80);
     session.messageCount = this.state.messages[sessionId].length;
     this.options.onChange();
-    let output = "";
+    const produced: StreamEvent[] = [];
     try {
       yield { type: "status", status: "running" };
-      const args = launchArgs(session.providerId, ctx.model, text);
-      for await (const piece of streamProcess(ctx.cliPath, args, ctx.env, ctx.workspacePath, signal, 180_000)) {
-        output += piece;
-        if (output.length > 200_000) output = output.slice(-200_000);
-        yield { type: "text", delta: piece };
+      produced.push({ type: "status", status: "running" });
+      for await (const event of this.turnEvents(session, text, ctx, signal)) {
+        produced.push(event);
+        yield event;
+        if (event.type === "error") session.status = "error";
       }
-      const message: ChatMessage = {
-        id: `${session.id}_a_${Date.now().toString(36)}`,
-        role: "assistant",
-        createdAt: new Date().toISOString(),
-        blocks: [{ type: "text", text: output || "(no output)" }],
-      };
-      this.state.messages[session.id].push(message);
-      session.status = "idle";
-      session.updatedAt = message.createdAt;
-      session.messageCount = this.state.messages[session.id].length;
-      session.preview = output.replace(/\s+/g, " ").slice(0, 80);
-      yield { type: "done" };
+      this.finishTurn(session, produced);
+      if (session.status !== "error") {
+        session.status = "idle";
+        yield { type: "done" };
+      }
     } catch (error) {
       session.status = "error";
       const message = explainCliError(error, ctx);
-      const body = [output.trim(), message].filter(Boolean).join("\n");
-      const assistant: ChatMessage = {
-        id: `${session.id}_a_${Date.now().toString(36)}`,
-        role: "assistant",
-        createdAt: new Date().toISOString(),
-        blocks: [{ type: "text", text: body || message }],
-      };
-      this.state.messages[session.id].push(assistant);
-      session.updatedAt = assistant.createdAt;
-      session.messageCount = this.state.messages[session.id].length;
-      session.preview = body.replace(/\s+/g, " ").slice(0, 80);
-      yield { type: "error", message: body || message };
+      produced.push({ type: "error", message });
+      this.finishTurn(session, produced);
+      yield { type: "error", message };
     } finally {
       if (session.status === "running") session.status = "idle";
       this.running.delete(sessionId);
       this.options.onChange();
     }
+  }
+
+  private async *turnEvents(session: Session, text: string, ctx: LiveContext, signal: AbortSignal): AsyncGenerator<StreamEvent> {
+    if (session.providerId === "grok") {
+      yield* streamGrok({
+        apiKey: ctx.env.XAI_API_KEY ?? "",
+        model: ctx.model || "grok-4",
+        endpoint: ctx.endpoint || "https://api.x.ai/v1",
+        messages: grokTurns(this.state.messages[session.id] ?? []),
+        locale: ctx.locale,
+        signal,
+      });
+      return;
+    }
+    if (session.providerId === "claude-code") {
+      let sdkMissing = false;
+      for await (const event of streamClaudeSdk({
+        prompt: text,
+        cwd: ctx.workspacePath,
+        model: ctx.model,
+        apiKey: ctx.env.ANTHROPIC_API_KEY,
+        env: ctx.env,
+        resumeId: this.state.externalIds?.[session.id],
+        locale: ctx.locale,
+        signal,
+        onSession: (id) => {
+          this.state.externalIds ??= {};
+          this.state.externalIds[session.id] = id;
+        },
+      })) {
+        if (event.type === "status" && event.status === "sdk-missing") {
+          sdkMissing = true;
+          break;
+        }
+        yield event;
+      }
+      if (!sdkMissing) return;
+    }
+    const args = launchArgs(session.providerId, ctx.model, text);
+    const mapper = createCliMapper();
+    for await (const piece of streamProcess(ctx.cliPath, args, ctx.env, ctx.workspacePath, signal, 180_000)) {
+      for (const event of mapper.push(piece)) yield event;
+    }
+    for (const event of mapper.flush()) yield event;
+  }
+
+  private finishTurn(session: Session, events: StreamEvent[]): void {
+    const blocks = blocksForTurn(events);
+    const message: ChatMessage = {
+      id: `${session.id}_a_${Date.now().toString(36)}`,
+      role: "assistant",
+      createdAt: new Date().toISOString(),
+      blocks,
+    };
+    this.state.messages[session.id].push(message);
+    session.updatedAt = message.createdAt;
+    session.messageCount = this.state.messages[session.id].length;
+    const text = [...blocks].reverse().find((block) => block.type === "text");
+    const preview = text && text.type === "text" ? text.text : blocks.map(blockPreview).join(" ");
+    session.preview = preview.replace(/\s+/g, " ").slice(0, 80);
   }
 
   enqueue(sessionId: string, prompt: string): QueueItem {
@@ -331,6 +384,84 @@ export class LiveEngine {
 
 export function liveProjectId(providerId: string): string {
   return `live__${providerId}`;
+}
+
+function blocksForTurn(events: StreamEvent[]): MessageBlock[] {
+  const { blocks } = blocksFromEvents(events);
+  const error = [...events].reverse().find((event) => event.type === "error");
+  if (error && error.type === "error" && !blocks.some((block) => block.type === "text" && block.text.includes(error.message))) {
+    blocks.push({ type: "text", text: error.message });
+  }
+  if (!blocks.length) blocks.push({ type: "text", text: "(no output)" });
+  return blocks;
+}
+
+function blockPreview(block: MessageBlock): string {
+  if (block.type === "text" || block.type === "thinking") return block.text;
+  return block.name;
+}
+
+function grokTurns(messages: ChatMessage[]): GrokTurn[] {
+  const turns: GrokTurn[] = [];
+  for (const message of messages) {
+    const text = message.blocks.filter((block) => block.type === "text").map((block) => block.type === "text" ? block.text : "").join("\n").trim();
+    if (!text) continue;
+    turns.push({ role: message.role, content: text });
+  }
+  return turns;
+}
+
+async function grokHealth(meta: CatalogEntry, ctx: LiveContext): Promise<HealthReport> {
+  const key = ctx.env.XAI_API_KEY ?? "";
+  if (!key) {
+    return {
+      id: meta.id,
+      state: "offline",
+      latencyMs: null,
+      version: null,
+      messageKey: "health.missing",
+      detail: "XAI_API_KEY",
+      checkedAt: new Date().toISOString(),
+    };
+  }
+  const started = Date.now();
+  const endpoint = (ctx.endpoint || "https://api.x.ai/v1").replace(/\/$/, "");
+  try {
+    const response = await fetch(`${endpoint}/models`, {
+      headers: { authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (response.status === 401 || response.status === 403) {
+      return {
+        id: meta.id,
+        state: "offline",
+        latencyMs: Date.now() - started,
+        version: null,
+        messageKey: "health.liveBad",
+        detail: explainGrokFailure({ status: response.status, locale: ctx.locale }),
+        checkedAt: new Date().toISOString(),
+      };
+    }
+    return {
+      id: meta.id,
+      state: response.ok ? "healthy" : "degraded",
+      latencyMs: Date.now() - started,
+      version: null,
+      messageKey: response.ok ? "health.liveOk" : "health.liveBad",
+      detail: response.ok ? "api.x.ai" : `HTTP ${response.status}`,
+      checkedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    return {
+      id: meta.id,
+      state: "offline",
+      latencyMs: null,
+      version: null,
+      messageKey: "health.liveBad",
+      detail: explainGrokFailure({ error, locale: ctx.locale }),
+      checkedAt: new Date().toISOString(),
+    };
+  }
 }
 
 function explainCliError(error: unknown, ctx: LiveContext): string {

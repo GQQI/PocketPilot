@@ -16,8 +16,12 @@ VS Code 不是这里的代理平台。编辑器只是你自己的工具；Mobile
 | OpenCode | `opencode` | CloudCLI 开源注册表里的 opencode。实时模式跑 `opencode run`。 |
 | Gemini CLI | `gemini` | CloudCLI 托管文档列出的线路。实时模式跑 `gemini -p -m`。 |
 | DeepSeek Harness | `dsh` | 不是普通的 DeepSeek 对话接口。实时模式跑 `dsh --profile headless`。模型写在 dsh 配置档里（示例：`deepseek-v4-pro`、`deepseek-v4-flash`）。 |
+| Grok | API | 实时模式流式请求 `https://api.x.ai/v1`。密钥是 `XAI_API_KEY`。电脑必须能访问 api.x.ai，否则会提示网络失败，而不是密钥错误。 |
+| Trae CN | 本地历史 | 把本机 Trae 的 json/jsonl 按对话归并。不会把每一条消息列成一行。 |
 
-默认是演示模式：六条线路都有样例项目、会话、文件和队列。手机和这台开发机都不需要先装 CLI。关掉演示模式后，电脑上的宿主会探测命令，并在你选中的目录里启动对应 CLI。
+默认是演示模式。手机和这台开发机都不需要先装 CLI。关掉演示模式后，电脑上的宿主会探测命令，并在你选中的目录里启动对应 CLI。平台头像是 lobehub/lobe-icons 的品牌 SVG（MIT），放在 `apps/web/public/icons/agents/`。
+
+Grok 从这台电脑请求 `api.x.ai`。连不上时会话里会写明是网络失败（`fetch failed`）、超时，还是密钥被拒绝。中国大陆部分网络访问不到 `api.x.ai`，这需要本机网络能通，代码里不会写死密钥或代理。
 
 新的代理实现 `AgentAdapter`（`packages/agent-core/src/hub.ts`），在创建 Hub 之前调用 `registerAdapter`。内置名单来自 `packages/agent-core/src/catalog.ts`。
 
@@ -50,7 +54,7 @@ flowchart LR
   Live --> Dsh[dsh]
 ```
 
-在手机上：选择代理，再用目录选择器挑电脑上的项目目录，然后发送消息。宿主把这段文字交给当前适配器，并把标准输出流式推回会话。六条内置线路走同一条路径。换代理只换适配器，不换手机上的操作。
+在手机上：选择代理，再用目录选择器挑电脑上的项目目录，然后发送消息。宿主把这段文字交给当前适配器，并把输出流式推回会话。换代理只换适配器，不换手机上的操作。
 
 密钥不会进仓库。环境变量优先；否则写到电脑上的 `~/.mobileagent/secrets.json`（权限 `0600`）。连接设置和浅色/深色偏好在 `~/.mobileagent/settings.json`，不含密钥。配对码在 `~/.mobileagent/host.json`。
 
@@ -112,7 +116,7 @@ npm start
 
 ### Claude Code
 
-安装 Claude Code 并完成一次登录。文档：<https://docs.anthropic.com/en/docs/claude-code>。实时提示使用 `claude -p --model <model>`。可选环境变量 `ANTHROPIC_API_KEY`。
+安装 Claude Code 并完成一次登录。文档：<https://docs.anthropic.com/en/docs/claude-code>。实时对话优先走 `@anthropic-ai/claude-agent-sdk` 的 `query()`（`includePartialMessages`），可以发消息并流式看到正文、思考和工具，不是只读历史。同一条会话会用 SDK 的 `resume` 接上。密钥用 `ANTHROPIC_API_KEY`。SDK 加载失败时才退回 `claude -p --output-format stream-json`。
 
 ### Codex
 
@@ -231,8 +235,10 @@ VS Code is not an agent backend here.
 | OpenCode | `opencode` | In the CloudCLI open-source provider registry. Live mode runs `opencode run`. |
 | Gemini CLI | `gemini` | Listed by CloudCLI's hosted docs. Live mode runs `gemini -p -m`. |
 | DeepSeek Harness | `dsh` | Not plain DeepSeek chat. Live mode runs `dsh --profile headless`. The model lives in the dsh profile (`deepseek-v4-pro`, `deepseek-v4-flash` in the upstream examples). |
+| Grok | API | Live mode streams `https://api.x.ai/v1`. The key is `XAI_API_KEY`. This PC must reach api.x.ai; a blocked network is reported as a network failure, not a bad key. |
+| Trae CN | local history | Groups local Trae json/jsonl into conversations instead of one row per message. |
 
-Demo mode is the default. It ships sample projects, sessions, files, and a queue for all six adapters, so neither the phone nor the dev machine needs the CLIs installed first. Turn it off and the host on the PC probes each command and runs it in the folder you picked.
+Demo mode is the default. It ships sample projects, sessions, files, and a queue, so neither the phone nor the dev machine needs the CLIs installed first. Turn it off and the host on the PC probes each command and runs it in the folder you picked. Grok calls the xAI API from this PC instead of a local CLI. The computer must be able to reach api.x.ai.
 
 Add another backend by implementing `AgentAdapter` in `packages/agent-core/src/hub.ts` and calling `registerAdapter` before `createHub`. Built-ins are declared in `packages/agent-core/src/catalog.ts`.
 
@@ -240,7 +246,7 @@ Add another backend by implementing `AgentAdapter` in `packages/agent-core/src/h
 
 The phone does not install the CLIs. A host (`apps/bridge`) runs on the PC. The UI can be installed on the phone, or served by the host.
 
-The phone chooses an agent, picks a project directory on that PC, and sends a message. The host hands the text to the current adapter and streams stdout back into the session. All six built-in agents share that path. Switching agents swaps the adapter, not the phone flow.
+The phone chooses an agent, picks a project directory on that PC, and sends a message. The host hands the text to the current adapter and streams output back into the session. Switching agents swaps the adapter, not the phone flow. Brand marks in the phone UI come from lobehub/lobe-icons (MIT), in `apps/web/public/icons/agents/`.
 
 Keys never go into git. Environment variables win; otherwise they are stored on the PC in `~/.mobileagent/secrets.json` with mode `0600`. Connection settings and the theme live in `~/.mobileagent/settings.json`. The pairing code lives in `~/.mobileagent/host.json`.
 
@@ -290,7 +296,7 @@ npm start
 Turn demo mode off, pick a folder on the computer, and adjust the command if it is not on `PATH`. A missing binary is written into the session as output from the PC. The phone does not install it.
 
 - **Cursor CLI** — <https://cursor.com/docs/cli/overview>. `agent -p`. `--model` is added only when the model is not `auto`.
-- **Claude Code** — <https://docs.anthropic.com/en/docs/claude-code>. `claude -p --model`. Optional `ANTHROPIC_API_KEY`.
+- **Claude Code** — <https://docs.anthropic.com/en/docs/claude-code>. Live turns use `@anthropic-ai/claude-agent-sdk` `query()` with `includePartialMessages`, so the phone can send and stream text, thinking, and tools. The SDK session id is resumed on the next turn. The key is `ANTHROPIC_API_KEY`. If the SDK cannot load, the host falls back to `claude -p --output-format stream-json`.
 - **Codex** — <https://developers.openai.com/codex>. `codex exec --skip-git-repo-check`. Optional `OPENAI_API_KEY`.
 - **OpenCode** — <https://opencode.ai>. `opencode run`.
 - **Gemini CLI** — <https://github.com/google-gemini/gemini-cli>. `gemini -p -m`. `GEMINI_API_KEY`, then `GOOGLE_API_KEY`.

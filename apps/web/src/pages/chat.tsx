@@ -99,7 +99,7 @@ export function ChatPage() {
     <div data-testid="chat" className="flex h-full flex-col px-4 md:px-8">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <Mark monogram={provider.meta.monogram} accent={provider.meta.accent} />
+          <Mark id={provider.meta.id} monogram={provider.meta.monogram} accent={provider.meta.accent} />
           <div className="min-w-0">
             <h1 className="truncate text-lg font-medium">{session.title}</h1>
             <p className="truncate text-xs text-mute">{provider.meta.name} · {t("chat.fromPc")}</p>
@@ -234,7 +234,7 @@ function MessageView({ message, name }: { message: ChatMessage; name: string }) 
 interface Live {
   thinking: string;
   text: string;
-  tools: { name: string; detail: string }[];
+  tools: { name: string; detail: string; status: "running" | "done" }[];
 }
 
 function applyEvent(current: Live | null, event: StreamEvent): Live {
@@ -242,7 +242,16 @@ function applyEvent(current: Live | null, event: StreamEvent): Live {
   if (event.type === "thinking") return { ...next, thinking: next.thinking + event.delta };
   if (event.type === "text") return { ...next, text: next.text + event.delta };
   if (event.type === "error") return { ...next, text: next.text ? `${next.text}\n${event.message}` : event.message };
-  if (event.type === "tool" && event.phase === "done") return { ...next, tools: [...next.tools, { name: event.name, detail: event.detail }] };
+  if (event.type === "tool" && event.phase === "start") {
+    return { ...next, tools: [...next.tools, { name: event.name, detail: event.detail, status: "running" }] };
+  }
+  if (event.type === "tool" && event.phase === "done") {
+    const tools = [...next.tools];
+    const index = tools.findLastIndex((tool) => tool.name === event.name && tool.status === "running");
+    if (index >= 0) tools[index] = { name: event.name, detail: event.detail || tools[index]?.detail || "", status: "done" };
+    else tools.push({ name: event.name, detail: event.detail, status: "done" });
+    return { ...next, tools };
+  }
   return next;
 }
 

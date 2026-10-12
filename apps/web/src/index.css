@@ -131,6 +131,18 @@ button, input, textarea, select { font: inherit; color: inherit; }
   flex: none;
 }
 
+.mark-logo {
+  background: color-mix(in srgb, var(--ma-fg) 8%, transparent);
+  color: var(--ma-fg);
+}
+
+.mark-logo img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  display: block;
+}
+
 .dock {
   display: grid;
   grid-template-columns: repeat(5, 1fr);

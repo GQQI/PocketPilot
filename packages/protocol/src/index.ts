@@ -5,6 +5,8 @@ export const BUILTIN_PROVIDER_IDS = [
   "opencode",
   "gemini",
   "deepseek-harness",
+  "grok",
+  "trae-cn",
 ] as const;
 
 export type BuiltinProviderId = (typeof BUILTIN_PROVIDER_IDS)[number];
@@ -192,6 +194,34 @@ export interface McpServer {
 export interface TerminalEvent {
   stream: "out" | "err" | "system";
   text: string;
+}
+
+/** Hardware/system back: leave the app only from home. Every other route returns home. */
+export type BackAction = { type: "exit" } | { type: "home" };
+
+export function backAction(pathname: string): BackAction {
+  const path = pathname.split("?")[0]?.split("#")[0]?.replace(/\/+$/, "") || "/";
+  if (path === "/" || path === "") return { type: "exit" };
+  return { type: "home" };
+}
+
+/** Parse one SSE buffer. Returns the incomplete tail. Ignores non-JSON keepalive frames. */
+export function consumeSse(buffer: string, onEvent: (data: unknown) => void): string {
+  const normalized = buffer.replace(/\r\n/g, "\n");
+  const parts = normalized.split("\n\n");
+  const rest = parts.pop() ?? "";
+  for (const part of parts) {
+    const line = part.split("\n").find((item) => item.startsWith("data:"));
+    if (!line) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    try {
+      onEvent(JSON.parse(payload));
+    } catch {
+      /* keepalive or a partial frame that was split incorrectly */
+    }
+  }
+  return rest;
 }
 
 export interface Bootstrap {

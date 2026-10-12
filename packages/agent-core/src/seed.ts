@@ -7,7 +7,7 @@ import type {
   Session,
 } from "@mobileagent/protocol";
 
-export const SEED_VERSION = 1;
+export const SEED_VERSION = 2;
 
 export interface WorkspaceFile {
   path: string;
@@ -211,6 +211,8 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   { id: "harbor__deepseek-harness", providerId: "deepseek-harness", workspaceId: "harbor", branch: "plugins/session-tools", changes: [
     { path: "src/auth/session.ts", status: "M" },
   ] },
+  { id: "harbor__grok", providerId: "grok", workspaceId: "harbor", branch: "notes/grok", changes: [] },
+  { id: "atlas__trae-cn", providerId: "trae-cn", workspaceId: "atlas", branch: "main", changes: [] },
   { id: "atlas__deepseek-harness", providerId: "deepseek-harness", workspaceId: "atlas", branch: "batch/failed-files", changes: [] },
 ];
 
@@ -230,6 +232,8 @@ const MCP: Record<string, McpServer[]> = {
     { id: "plugins", name: "cordis-plugins", transport: "stdio", enabled: true },
     { id: "schedule", name: "scheduler", transport: "http", enabled: true },
   ],
+  grok: [],
+  "trae-cn": [],
 };
 
 function ago(minutes: number): string {
@@ -348,6 +352,16 @@ export function buildSeed(): DemoSnapshot {
         { type: "tool", name: "read_file", detail: "atlas/pipeline.py", status: "done" },
       ]),
     ],
+    ses_grok_notes: [
+      textMessage("ses_grok_notes_u", "user", "把登录说明收成手机上能看的几句。", 12),
+      textMessage("ses_grok_notes_a", "assistant", "密钥留在电脑上。手机只转发这句话，回复从 api.x.ai 流回来。", 9, [
+        { type: "thinking", text: "先确认密钥不进仓库，再写能在手机上读的说明。" },
+      ]),
+    ],
+    ses_trae_nav: [
+      textMessage("ses_trae_nav_u", "user", "历史里不要把每一条消息都列出来。", 20),
+      textMessage("ses_trae_nav_a", "assistant", "按会话而不是按单条消息。这一轮只保留这一条对话。", 18),
+    ],
   };
 
   const sessions: Session[] = [
@@ -363,6 +377,8 @@ export function buildSeed(): DemoSnapshot {
     { id: "ses_gemini_notes", providerId: "gemini", projectId: "northwind__gemini", title: "缩短发布说明", status: "idle", updatedAt: ago(380), preview: "不要在这次发布里改导航", messageCount: 2 },
     { id: "ses_dsh_plugins", providerId: "deepseek-harness", projectId: "harbor__deepseek-harness", title: "把会话工具拆成插件", status: "idle", updatedAt: ago(6), preview: "cookie 解析可以收成独立插件", messageCount: 2 },
     { id: "ses_dsh_batch", providerId: "deepseek-harness", projectId: "atlas__deepseek-harness", title: "坏文件不要停掉整批", status: "idle", updatedAt: ago(40), preview: "记录坏文件，继续剩下的行", messageCount: 2 },
+    { id: "ses_grok_notes", providerId: "grok", projectId: "harbor__grok", title: "整理登录说明", status: "idle", updatedAt: ago(9), preview: "密钥留在电脑上", messageCount: 2 },
+    { id: "ses_trae_nav", providerId: "trae-cn", projectId: "atlas__trae-cn", title: "导航改动说明", status: "idle", updatedAt: ago(18), preview: "按会话而不是按单条消息", messageCount: 2 },
   ];
 
   const queue: QueueItem[] = [

@@ -54,7 +54,7 @@ export function HomePage() {
             <button type="button" className="text-sm text-accent" data-testid="open-agents" onClick={() => setAgentsOpen(true)}>{t("home.changeAgent")}</button>
           </div>
           <div className="mt-3 flex items-center gap-3">
-            <Mark monogram={provider.meta.monogram} accent={provider.meta.accent} />
+            <Mark id={provider.meta.id} monogram={provider.meta.monogram} accent={provider.meta.accent} />
             <div>
               <h2 className="text-lg font-medium">{provider.meta.name}</h2>
               <p className="text-sm text-mute">{t(healthKey[provider.health.state])} · {blurb(provider.meta.id)}</p>
@@ -93,7 +93,7 @@ export function HomePage() {
               }}
             >
               <div className="flex items-center gap-3">
-                <Mark monogram={item.meta.monogram} accent={item.meta.accent} />
+                <Mark id={item.meta.id} monogram={item.meta.monogram} accent={item.meta.accent} />
                 <div className="min-w-0 text-left">
                   <div className="text-sm font-medium">{item.meta.name}</div>
                   <div className="text-xs text-mute">{t(healthKey[item.health.state])} · {item.meta.cli}</div>

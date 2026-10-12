@@ -97,6 +97,34 @@ export const CATALOG: CatalogEntry[] = [
     monogram: "Ds",
     demo: { state: "healthy", latencyMs: 64 },
   },
+  {
+    id: "grok",
+    name: "Grok",
+    vendor: "xAI",
+    cli: "grok",
+    defaultModel: "grok-4",
+    models: ["grok-4", "grok-3"],
+    endpoint: "https://api.x.ai/v1",
+    envKeys: ["XAI_API_KEY"],
+    docsUrl: "https://docs.x.ai",
+    accent: "#8d7355",
+    monogram: "Gk",
+    demo: { state: "healthy", latencyMs: 44 },
+  },
+  {
+    id: "trae-cn",
+    name: "Trae CN",
+    vendor: "Trae",
+    cli: "trae",
+    defaultModel: "",
+    models: [],
+    endpoint: "",
+    envKeys: [],
+    docsUrl: "https://www.trae.ai",
+    accent: "#3d6a4a",
+    monogram: "Tr",
+    demo: { state: "healthy", latencyMs: 42 },
+  },
 ];
 
 export function catalogById(id: string): CatalogEntry | undefined {
@@ -107,11 +135,15 @@ export function catalogById(id: string): CatalogEntry | undefined {
 export function launchArgs(id: string, model: string, prompt: string): string[] {
   switch (id) {
     case "cursor":
-      return model && model !== "auto" ? ["-p", "--model", model, prompt] : ["-p", prompt];
+      return model && model !== "auto"
+        ? ["-p", "--output-format", "stream-json", "--stream-partial-output", "--model", model, prompt]
+        : ["-p", "--output-format", "stream-json", "--stream-partial-output", prompt];
     case "claude-code":
-      return model ? ["-p", "--model", model, prompt] : ["-p", prompt];
+      return model
+        ? ["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--model", model, prompt]
+        : ["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", prompt];
     case "codex":
-      return ["exec", "--skip-git-repo-check", prompt];
+      return ["exec", "--json", "--skip-git-repo-check", prompt];
     case "opencode":
       return ["run", prompt];
     case "gemini":

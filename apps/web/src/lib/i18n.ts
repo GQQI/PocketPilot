@@ -293,6 +293,8 @@ export const blurbs: Record<"zh" | "en", Record<string, string>> = {
     opencode: "开源编码代理",
     gemini: "终端里的 Gemini",
     "deepseek-harness": "插件化的 dsh",
+    grok: "xAI 的对话接口",
+    "trae-cn": "按会话归并的 Trae",
   },
   en: {
     cursor: "Agent CLI in the repo",
@@ -301,25 +303,31 @@ export const blurbs: Record<"zh" | "en", Record<string, string>> = {
     opencode: "Open-source coding agent",
     gemini: "Gemini in the terminal",
     "deepseek-harness": "Plugin harness, dsh",
+    grok: "xAI chat",
+    "trae-cn": "Trae conversations",
   },
 };
 
 export const hints: Record<"zh" | "en", Record<string, string>> = {
   zh: {
-    cursor: "实时模式执行 agent -p。模型不是 auto 时附加 --model。",
-    "claude-code": "实时模式执行 claude -p --model。",
+    cursor: "实时模式执行 agent -p --output-format stream-json。模型不是 auto 时附加 --model。",
+    "claude-code": "实时模式用 Claude Agent SDK 发消息并流式返回。密钥用 ANTHROPIC_API_KEY。",
     codex: "实时模式执行 codex exec。模型以本机 Codex 配置为准。",
     opencode: "实时模式执行 opencode run。模型用 OpenCode 自己的配置。",
     gemini: "实时模式执行 gemini -p -m。",
     "deepseek-harness": "实时模式执行 dsh --profile headless。模型写在 dsh 配置档里，示例是 deepseek-v4-pro / deepseek-v4-flash。密钥用 DEEPSEEK_API_KEY。",
+    grok: "实时模式请求 api.x.ai 并流式返回。密钥用 XAI_API_KEY。这台电脑必须能访问 api.x.ai。",
+    "trae-cn": "历史按对话归并。本机 Trae CN 的 json/jsonl 记录会合成会话，而不是一行一条消息。",
   },
   en: {
-    cursor: "Live mode runs agent -p, and adds --model unless the model is auto.",
-    "claude-code": "Live mode runs claude -p --model.",
+    cursor: "Live mode runs agent -p --output-format stream-json, and adds --model unless the model is auto.",
+    "claude-code": "Live mode sends through the Claude Agent SDK and streams the reply. The key is ANTHROPIC_API_KEY.",
     codex: "Live mode runs codex exec. The model stays in the local Codex config.",
     opencode: "Live mode runs opencode run. The model stays in OpenCode's own config.",
     gemini: "Live mode runs gemini -p -m.",
     "deepseek-harness": "Live mode runs dsh --profile headless. The model lives in the dsh profile (examples: deepseek-v4-pro / deepseek-v4-flash). The key is DEEPSEEK_API_KEY.",
+    grok: "Live mode streams api.x.ai. The key is XAI_API_KEY. This PC must be able to reach api.x.ai.",
+    "trae-cn": "History is grouped into conversations. Local Trae CN json/jsonl records become one row per chat, not one row per message.",
   },
 };
 
@@ -331,6 +339,8 @@ export const suggestions: Record<"zh" | "en", Record<string, string[]>> = {
     opencode: ["列出首屏还会掉帧的原因", "别改导航结构"],
     gemini: ["用三句话总结延迟", "短一点"],
     "deepseek-harness": ["列出还能拆成插件的工具", "坏文件不要停掉整批"],
+    grok: ["用几句话说明这次改动", "别把密钥写进回复"],
+    "trae-cn": ["把这次改动收成一段说明", "不要按单条消息列历史"],
   },
   en: {
     cursor: ["Add the expired-signature test", "Call out the risk in this diff"],
@@ -339,5 +349,7 @@ export const suggestions: Record<"zh" | "en", Record<string, string[]>> = {
     opencode: ["List why the first screen still stutters", "Leave the navigation alone"],
     gemini: ["Summarize the latency in three lines", "Shorter"],
     "deepseek-harness": ["List tools that can become plugins", "Don't fail the whole batch on a bad file"],
+    grok: ["Explain this change in a few lines", "Do not put secrets in the reply"],
+    "trae-cn": ["Summarize this change as one conversation", "Do not list every message as history"],
   },
 };

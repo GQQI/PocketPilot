@@ -72,13 +72,32 @@ export function listHostDirectory(input: string): FsListing {
     if (out.length >= 200) break;
   }
   out.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "dir" ? -1 : 1));
-  const parent = path.dirname(target);
   return {
     path: target,
-    parent: parent === target ? null : parent,
+    parent: directoryParent(target),
     entries: out,
     demo: false,
   };
+}
+
+/**
+ * Parent directory for the folder picker.
+ * A Windows drive root (`C:\`) and the POSIX root both return `""`, which is the
+ * drive/root chooser. `null` is only the top of that chooser.
+ */
+export function directoryParent(target: string): string | null {
+  const trimmed = target.trim();
+  if (!trimmed) return null;
+  if (/^[A-Za-z]:[\\/]?$/.test(trimmed) || trimmed === "/" || trimmed === "\\") return "";
+  const windows = /^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.includes("\\");
+  if (windows) {
+    const normalized = path.win32.normalize(trimmed.replace(/\//g, "\\"));
+    if (/^[A-Za-z]:\\$/.test(normalized)) return "";
+    const parent = path.win32.dirname(normalized);
+    return parent === normalized ? "" : parent;
+  }
+  const parent = path.posix.dirname(trimmed);
+  return parent === trimmed ? "" : parent;
 }
 
 function roots(): FsListing {
