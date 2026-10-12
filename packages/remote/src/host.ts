@@ -11,7 +11,7 @@ export interface HostOptions {
   /** Runs an API request through the app. MUST treat it as a non-loopback, unauthenticated-by-default request. */
   fetch: (request: Request) => Response | Promise<Response>;
   /** Called once per successful QR pairing. */
-  grant: (name: string, linkSecret: string) => { token: string; deviceId: string };
+  grant: (name: string, linkSecret: string, clientId?: string) => { token: string; deviceId: string };
   hostName: string;
   /** LAN base URLs of this PC; sent to the phone at pairing so it can reconnect over the LAN without MQTT/WebRTC */
   lanUrls?: () => string[];
@@ -25,6 +25,8 @@ interface Sub {
   secret: Uint8Array;
   sid: string;
   deviceId?: string;
+  /** Original link secret string, so a re-pair can replace the subscription when it changes. */
+  linkSecret?: string;
   unsubscribe: () => void;
 }
 
@@ -90,16 +92,18 @@ export class RemoteHost {
 
   /** Subscribe to the persisted links of all paired devices; drop revoked ones. */
   async syncLinks(links: Array<{ id: string; linkSecret: string }>): Promise<void> {
-    const wanted = new Set(links.map((link) => link.id));
+    const byId = new Map(links.map((link) => [link.id, link.linkSecret]));
     for (const [key, sub] of this.subs) {
-      if (sub.kind === "link" && sub.deviceId && !wanted.has(sub.deviceId)) {
+      if (sub.kind !== "link" || !sub.deviceId) continue;
+      const secret = byId.get(sub.deviceId);
+      if (!secret || secret !== sub.linkSecret) {
         this.dropSub(key);
         for (const conn of [...this.conns.values()]) if (conn.sub === sub) this.closeConn(conn);
       }
     }
     for (const link of links) {
       if ([...this.subs.values()].some((sub) => sub.deviceId === link.id)) continue;
-      await this.listen("link", "link", b64uDecode(link.linkSecret), link.id);
+      await this.listen("link", "link", b64uDecode(link.linkSecret), link.id, link.linkSecret);
     }
   }
 
@@ -114,11 +118,11 @@ export class RemoteHost {
     for (const key of [...this.subs.keys()]) this.dropSub(key);
   }
 
-  private async listen(kind: "pair" | "link", sid: string, secret: Uint8Array, id: string): Promise<void> {
+  private async listen(kind: "pair" | "link", sid: string, secret: Uint8Array, id: string, linkSecret?: string): Promise<void> {
     const { topic, key } = await deriveSignaling(secret, sid);
     const subKey = `${kind}:${id}`;
     if (this.subs.has(subKey)) return;
-    const sub: Sub = { kind, topic, key, secret, sid, deviceId: kind === "link" ? id : undefined, unsubscribe: () => undefined };
+    const sub: Sub = { kind, topic, key, secret, sid, deviceId: kind === "link" ? id : undefined, linkSecret, unsubscribe: () => undefined };
     sub.unsubscribe = this.options.bus.subscribe(topic, (payload) => void this.onSignal(sub, payload));
     this.subs.set(subKey, sub);
   }
@@ -255,7 +259,7 @@ export class RemoteHost {
         }
         pairing.used = true;
         const linkSecret = b64uEncode(randomBytes(32));
-        const granted = this.options.grant(frame.name ?? "Phone", linkSecret);
+        const granted = this.options.grant(frame.name ?? "Phone", linkSecret, frame.deviceId);
         void mux.send({ t: "welcome", token: granted.token, deviceId: granted.deviceId, linkSecret, host: this.options.hostName, urls: this.options.lanUrls?.() ?? [] });
         setTimeout(() => this.dropPairing(conn.sub.sid), 1000).unref?.();
         return;
