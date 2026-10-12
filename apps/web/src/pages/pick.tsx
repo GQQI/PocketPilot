@@ -134,7 +134,7 @@ function SessionStep() {
       action={project ? <Button size="sm" disabled={!agent.available} onClick={() => navigate(`/chat/${agent.id}/new?cwd=${encodeURIComponent(project)}`)}><Plus size={16} />{t("a.newChat")}</Button> : undefined}>
       <div className="mt-3 space-y-2">
         {rows === null ? <p className="text-sm text-mute">{t("common.loading")}</p> : null}
-        {rows?.length === 0 ? <EmptyState text={t("a.recentEmpty")} /> : null}
+        {rows?.length === 0 ? <EmptyState text={agent.historyNote || t("a.recentEmpty")} /> : null}
         {rows?.map((s) => <SessionRow key={s.id} session={s} onOpen={() => navigate(`/chat/${agent.id}/${s.id}`)} />)}
       </div>
       {rows && rows.length >= limit ? <Button className="mt-4 w-full" variant="soft" onClick={() => setLimit(limit + 40)}>{t("a.more")}</Button> : null}

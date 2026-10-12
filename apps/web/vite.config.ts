@@ -51,8 +51,11 @@ export default defineConfig({
           proxy.on("proxyRes", (proxyRes, _req, res) => {
             const type = String(proxyRes.headers["content-type"] ?? "");
             if (type.includes("text/event-stream")) {
+              proxyRes.headers["cache-control"] = "no-cache, no-transform";
+              proxyRes.headers["x-accel-buffering"] = "no";
               res.setHeader("Cache-Control", "no-cache, no-transform");
               res.setHeader("X-Accel-Buffering", "no");
+              res.flushHeaders?.();
             }
           });
         },

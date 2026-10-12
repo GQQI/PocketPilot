@@ -185,6 +185,7 @@ function xhrSse(url: string, body: string, headers: Record<string, string>, onEv
     xhr.open("POST", url);
     for (const [key, value] of Object.entries(headers)) xhr.setRequestHeader(key, value);
     xhr.onprogress = () => pump(false);
+    xhr.onreadystatechange = () => { if (xhr.readyState === 3 || xhr.readyState === 4) pump(xhr.readyState === 4); };
     xhr.onerror = () => reject(new ApiError("network", 0));
     xhr.onabort = () => reject(new DOMException("aborted", "AbortError"));
     xhr.onload = () => {

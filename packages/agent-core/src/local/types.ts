@@ -22,6 +22,10 @@ export interface Detection {
   defaultModel?: string;
   /** models reported by the platform itself (e.g. `cursor-agent --list-models`) */
   models?: string[];
+  /** Shown when the app is present but its chats cannot be read. */
+  historyNote?: string;
+  /** The product's data dir exists, even when chats are unreadable. */
+  seen?: boolean;
 }
 
 export interface LocalAgent {
