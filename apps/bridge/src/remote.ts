@@ -20,7 +20,7 @@ export interface RemoteService {
  * WebRTC + public-MQTT remote transport (opt-in with POCKETPILOT_RTC=1).
  * Requests arriving over the data channel are handed to app.fetch with no socket (so never loopback) and must carry a device token.
  */
-export async function startRemote(hub: Hub, handle: (request: Request) => Response | Promise<Response>, log: (message: string) => void): Promise<RemoteService | null> {
+export async function startRemote(hub: Hub, handle: (request: Request) => Response | Promise<Response>, log: (message: string) => void, lanUrls?: () => string[]): Promise<RemoteService | null> {
   let RTC: RtcCtor;
   try {
     const mod = await import("node-datachannel/polyfill");
@@ -39,6 +39,7 @@ export async function startRemote(hub: Hub, handle: (request: Request) => Respon
     hostName: hostname(),
     log,
     fetch: handle,
+    lanUrls,
     grant: (name, linkSecret) => {
       const { token, device } = hub.grantDevice(name, linkSecret);
       return { token, deviceId: device.id };

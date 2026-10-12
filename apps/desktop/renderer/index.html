@@ -16,6 +16,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="home" data-i18n="tabHome">主页</button>
     <button class="tab" data-tab="settings" data-i18n="tabSettings">设置</button>
+    <button class="tab" data-tab="platforms" id="tabPlatforms">平台与密钥</button>
   </nav>
   <div class="pill" id="topPill"><span class="dot"></span><span id="topPillText">…</span></div>
 </header>
@@ -95,8 +96,22 @@
       </article>
     </div>
   </section>
+  <section id="page-platforms" class="page" hidden>
+    <div class="col plat-col">
+      <h2 id="platTitle">平台与密钥</h2>
+      <p class="muted" id="platHint"></p>
+      <div id="platList"></div>
+    </div>
+  </section>
 </main>
+<div class="guide-modal" id="guideModal" hidden>
+  <div class="guide-card">
+    <div class="guide-head"><h3 id="guideTitle"></h3><button class="btn" id="guideClose">关闭</button></div>
+    <div class="guide-scroll" id="guideBody"></div>
+  </div>
+</div>
 <div class="toast" id="toast" hidden></div>
 <script src="app.js"></script>
+<script src="platforms.js"></script>
 </body>
 </html>

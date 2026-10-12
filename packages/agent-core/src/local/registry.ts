@@ -1,3 +1,4 @@
+import type { AgentTestResult } from "@pocketpilot/protocol";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AgentProject, AgentsOverview, AgentStatus, AgentUsage, ChatMessage, StreamEvent, AgentChatRequest, AgentSession } from "@pocketpilot/protocol";
@@ -42,8 +43,8 @@ export class LocalAgents {
 
   async overview(force = false): Promise<AgentsOverview> {
     const all = await Promise.all(CATALOG.map((meta) => this.status(meta.id, force)));
-    const agents = all.filter((a) => a.detected);
-    return { agents, detected: agents.length, available: agents.filter((a) => a.available).length, total: CATALOG.length };
+    // every adapted platform is listed, installed or not, so the phone can show its status and how to set it up
+    return { agents: all, detected: all.filter((a) => a.detected).length, available: all.filter((a) => a.available).length, total: CATALOG.length };
   }
 
   async status(id: string, force = false): Promise<AgentStatus> {
@@ -86,11 +87,28 @@ export class LocalAgents {
       docsUrl: meta.docsUrl,
       dataPath: detection.dataPath,
       configuredCliPath: ctx.cliPath,
+      keyLast4: ctx.keySource !== "none" ? (meta.envKeys.map((k) => ctx.env[k]).find(Boolean) ?? "").slice(-4) : "",
       installCmd: INSTALL[id]?.[process.platform === "win32" ? "win" : "unix"] ?? "",
       checkedAt: new Date().toISOString(),
     };
     this.detectCache.set(id, { at: Date.now(), value });
     return value;
+  }
+
+  /** "Test connection": the platform's own check when it has one, otherwise its detected auth state. */
+  async test(id: string): Promise<AgentTestResult> {
+    const agent = this.agent(id);
+    const ctx = this.ctxFor(id);
+    this.invalidate(id);
+    const status = await this.status(id, true);
+    try {
+      if (agent.test) return await agent.test(ctx, status.cliPath);
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
+    const zh = ctx.locale !== "en";
+    if (!status.available) return { ok: false, message: zh ? "没有找到可运行的命令行/接口，请先安装或配置。" : "Nothing runnable was found. Install or configure it first." };
+    return { ok: status.auth.state === "ok", message: status.auth.note || (status.auth.state === "ok" ? (zh ? "已就绪" : "Ready") : (zh ? "尚未登录或未配置密钥" : "Not signed in / no key")) };
   }
 
   invalidate(id?: string): void {

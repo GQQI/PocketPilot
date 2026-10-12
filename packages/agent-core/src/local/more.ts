@@ -1,3 +1,4 @@
+import type { AgentTestResult } from "@pocketpilot/protocol";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, StreamEvent } from "@pocketpilot/protocol";
@@ -202,6 +203,25 @@ export const grokAgent: LocalAgent = {
       models,
     };
   },
+  async test(ctx, _cli): Promise<AgentTestResult> {
+    const zh = ctx.locale !== "en";
+    const key = ctx.env.XAI_API_KEY ?? "";
+    if (!key) return { ok: false, message: zh ? "未配置 XAI_API_KEY：请先填写并保存密钥。" : "No XAI_API_KEY saved yet." };
+    try {
+      const res = await fetch(`${XAI}/models`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) });
+      if (res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { data?: unknown[] };
+        grokModels = null;
+        const n = j.data?.length ?? 0;
+        return { ok: true, message: zh ? `连接成功，密钥有效，可用模型 ${n} 个。` : `Connected. The key is valid, ${n} models available.` };
+      }
+      const hint = res.status === 400 || res.status === 401 || res.status === 403 ? (zh ? "密钥无效或已被吊销。" : "The key is invalid or revoked.") : `HTTP ${res.status}`;
+      return { ok: false, message: zh ? `xAI 拒绝了请求：${hint}` : `xAI rejected the request: ${hint}` };
+    } catch (error) {
+      return { ok: false, message: (zh ? "无法访问 api.x.ai：" : "Cannot reach api.x.ai: ") + (error instanceof Error ? error.message : String(error)).slice(0, 160) };
+    }
+  },
+
   async sessions(ctx): Promise<AgentSession[]> {
     return grokRead(ctx.dataDir).map((c) => ({ id: c.id, agentId: "grok", title: c.title, projectPath: c.cwd, projectName: baseName(c.cwd), updatedAt: c.updatedAt, messageCount: c.messages.length, preview: oneLine(c.messages.at(-1)?.text ?? "", 100), source: "pocketpilot" }));
   },
@@ -248,7 +268,7 @@ export const grokAgent: LocalAgent = {
       const raw = await res.text().catch(() => "");
       let msg = raw;
       try { const j = JSON.parse(raw) as { error?: string | { message?: string }; code?: string }; msg = typeof j.error === "string" ? j.error : j.error?.message ?? raw; } catch { /* raw */ }
-      const hint = res.status === 401 || res.status === 403 ? (ctx.locale === "en" ? " (check XAI_API_KEY)" : "（请检查 XAI_API_KEY）") : "";
+      const hint = res.status === 400 || res.status === 401 || res.status === 403 ? (ctx.locale === "en" ? " (check XAI_API_KEY)" : "（请检查 XAI_API_KEY）") : "";
       yield { type: "error", message: cap(`xAI API ${res.status}: ${msg}${hint}`, 500) };
       return;
     }

@@ -15,6 +15,8 @@ export interface ClientOptions {
   answerTimeoutMs?: number;
   iceTimeoutMs?: number;
   log?: (message: string) => void;
+  /** progress for the UI: reaching the signaling brokers, waiting for the PC, opening the P2P channel */
+  onStage?: (stage: "signal" | "offer" | "ice") => void;
 }
 
 interface Pending {
@@ -29,6 +31,7 @@ export interface Welcome {
   deviceId: string;
   linkSecret: string;
   host: string;
+  urls?: string[];
 }
 
 /** Phone side: opens an end-to-end encrypted data channel and exposes a fetch()-like API over it. */
@@ -78,6 +81,20 @@ export class RemoteClient {
     });
     await mux.send({ t: "hello", name });
     return result;
+  }
+
+  /** Round-trips a ping; false (and the link is torn down) when the channel is dead, e.g. after the app was in the background. */
+  async probe(timeoutMs = 3000): Promise<boolean> {
+    if (!this.open || !this.mux) return false;
+    const before = this.lastRx;
+    void this.mux.send({ t: "ping" }).catch(() => undefined);
+    const end = Date.now() + timeoutMs;
+    while (Date.now() < end) {
+      if (this.lastRx > before) return true;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    this.teardown(new RemoteError("closed", ERROR_HINTS.closed));
+    return false;
   }
 
   close(): void {
@@ -185,7 +202,8 @@ export class RemoteClient {
     const secret = b64uDecode(target.secret);
     const sid = target.kind === "pair" ? target.sid : "link";
     try {
-      if (!(await bus.ready(o.signalTimeoutMs ?? 15_000))) throw new RemoteError("signal", ERROR_HINTS.signal);
+      o.onStage?.("signal");
+      if (!(await bus.ready(o.signalTimeoutMs ?? 5_000))) throw new RemoteError("signal", ERROR_HINTS.signal);
       const { topic, key } = await deriveSignaling(secret, sid);
       const ecdh = await newEcdh();
       const cid = randomId(8);
@@ -223,16 +241,17 @@ export class RemoteClient {
           // The host may subscribe late or a broker may drop a message: repeat offer + candidates until answered.
           void send({ type: "offer", sdp: offerSdp, pub: ecdh.publicKey });
           for (const cand of local) void send({ type: "cand", cand: cand.cand });
-        }, 3000);
-        const answerTimer = setTimeout(() => fail(new RemoteError("no-host", ERROR_HINTS["no-host"])), o.answerTimeoutMs ?? 30_000);
+        }, 1500);
+        const answerTimer = setTimeout(() => fail(new RemoteError("no-host", ERROR_HINTS["no-host"])), o.answerTimeoutMs ?? (target.kind === "pair" ? 12_000 : 6_000));
         const unsubscribe = bus.subscribe(topic, (payload) => {
           void openSignal(key, topic, payload).then(async (msg) => {
             if (!msg || msg.from !== "h" || msg.cid !== cid) return;
             if (msg.type === "answer" && msg.sdp && msg.pub && !answered) {
               answered = true;
+              o.onStage?.("ice");
               clearInterval(resend);
               clearTimeout(answerTimer);
-              iceTimer = setTimeout(() => fail(new RemoteError("ice", ERROR_HINTS.ice)), o.iceTimeoutMs ?? 25_000);
+              iceTimer = setTimeout(() => fail(new RemoteError("ice", ERROR_HINTS.ice)), o.iceTimeoutMs ?? 5_000);
               const keys = await deriveSession(ecdh, msg.pub, secret, sid, "client", ecdh.publicKey, msg.pub);
               const mux = new SecureMux(new SecureChannel(keys), {
                 send: (data) => dc.send(data as unknown as ArrayBuffer),
@@ -265,6 +284,7 @@ export class RemoteClient {
           resolve();
         };
         pc.onconnectionstatechange = () => {
+          if (pc.connectionState === "disconnected" && this.open) setTimeout(() => { if (pc.connectionState !== "connected" && this.pc === pc && this.open) this.teardown(new RemoteError("closed", ERROR_HINTS.closed)); }, 4000);
           if (pc.connectionState === "failed") {
             if (!this.open) fail(new RemoteError("ice", ERROR_HINTS.ice));
             else this.teardown(new RemoteError("closed", ERROR_HINTS.closed));
@@ -273,15 +293,16 @@ export class RemoteClient {
         dc.onclose = () => {
           if (this.open) this.teardown(new RemoteError("closed", ERROR_HINTS.closed));
         };
+        o.onStage?.("offer");
         void send({ type: "offer", sdp: offerSdp, pub: ecdh.publicKey });
       });
       await opened;
       this.open = true;
       this.lastRx = Date.now();
       this.heartbeat = setInterval(() => {
-        if (Date.now() - this.lastRx > 35_000) return this.teardown(new RemoteError("closed", ERROR_HINTS.closed));
+        if (Date.now() - this.lastRx > 15_000) return this.teardown(new RemoteError("closed", ERROR_HINTS.closed));
         void this.mux?.send({ t: "ping" }).catch(() => undefined);
-      }, 10_000);
+      }, 5_000);
     } catch (error) {
       this.teardown(error instanceof RemoteError ? error : new RemoteError("closed", (error as Error).message), false);
       throw error;

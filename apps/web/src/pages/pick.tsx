@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight, FolderOpen, Layers, Plus } from "lucide-reac
 import type { AgentProject } from "@pocketpilot/protocol";
 import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router";
-import { agentState, statusLabel } from "@/components/agent-picker";
+import { agentState, statusLabel, needsKey } from "@/components/agent-picker";
 import { Mark } from "@/components/shell";
 import { Button, EmptyState } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -56,7 +56,7 @@ export function PlatformStep() {
               <Mark monogram={a.monogram} accent={a.accent} />
               <span className="min-w-0 flex-1 text-left">
                 <span className="set-title block">{a.name}</span>
-                <span className="block truncate text-xs text-mute"><span className={`dot dot-${st}`} /> {statusLabel(a.available, a.hasHistory, t)}{a.canListSessions ? ` · ${t("s.pick.sessions", { n: a.sessionCount, p: a.projectCount })}` : ""}</span>
+                <span className="block truncate text-xs text-mute"><span className={`dot dot-${st}`} /> {statusLabel(a.available, a.hasHistory, t, needsKey(a))}{a.canListSessions ? ` · ${t("s.pick.sessions", { n: a.sessionCount, p: a.projectCount })}` : ""}</span>
               </span>
               <ChevronRight size={18} className="set-chev" />
             </button>

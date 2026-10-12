@@ -3,6 +3,7 @@ import { b64uDecode, b64uEncode, open, seal } from "./crypto";
 
 /** Free public MQTT brokers over secure websockets. We use several in parallel; any one reachable broker is enough. */
 export const DEFAULT_BROKERS = [
+  "wss://broker-cn.emqx.io:8084/mqtt",
   "wss://broker.emqx.io:8084/mqtt",
   "wss://broker.hivemq.com:8884/mqtt",
   "wss://test.mosquitto.org:8081",
@@ -37,6 +38,7 @@ export class MqttBus implements SignalBus {
   private seen = new Set<string>();
   private connected = 0;
   private waiters: Array<() => void> = [];
+  private resub?: ReturnType<typeof setInterval>;
 
   private readonly log: (message: string) => void;
 
@@ -71,6 +73,11 @@ export class MqttBus implements SignalBus {
       });
       this.clients.push(client);
     }
+    // belt and braces: a broker can silently lose subscriptions, so re-assert them every minute
+    this.resub = setInterval(() => {
+      for (const client of this.clients) if (client.connected) for (const topic of this.listeners.keys()) client.subscribe(topic, { qos: 0 });
+    }, 60_000);
+    (this.resub as { unref?: () => void }).unref?.();
   }
 
   publish(topic: string, payload: string): void {
@@ -112,6 +119,7 @@ export class MqttBus implements SignalBus {
   }
 
   close(): void {
+    clearInterval(this.resub);
     for (const client of this.clients) client.end(true);
     this.clients = [];
   }

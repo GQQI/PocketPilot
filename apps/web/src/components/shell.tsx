@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import type { TaskNote } from "@/lib/notify";
 import { Button, Input } from "@/components/ui";
+import { api } from "@/lib/api";
+import { rtcConfigured, useLinkState } from "@/lib/rtc";
 import { useApp } from "@/lib/store";
 import { useScanPair } from "@/components/remote-pair";
 
@@ -16,7 +18,7 @@ const links: { to: string; key: string; icon: typeof LayoutGrid }[] = [
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { data, loading, error, notice, needsPair, refresh, t, setNotice } = useApp();
+  const { data, loading, error, notice, needsPair, retry, t, setNotice } = useApp();
   const scan = useScanPair();
   const gated = needsPair && !data;
   return (
@@ -29,17 +31,24 @@ export function Shell({ children }: { children: ReactNode }) {
               <ScanLine size={20} strokeWidth={1.9} />
             </button>
           </header>
-          <div className="min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1">
+            <LinkBanner />
             {error && !data ? (
               <div className="px-4 pt-16 md:px-8">
                 <h1 className="display text-4xl">{t("common.offline")}</h1>
-                <p className="mt-3 max-w-md text-mute">{t("common.offlineHelp")}</p>
-                <button type="button" className="btn btn-primary mt-6 h-11 rounded-full px-6 text-sm font-semibold" onClick={() => void refresh()}>
+                <p className="mt-3 max-w-md text-mute" data-testid="offline-reason">{error}</p>
+                <p className="mt-2 max-w-md text-sm text-mute">{t("common.offlineHelp")}</p>
+                <button type="button" className="btn btn-primary mt-6 h-11 rounded-full px-6 text-sm font-semibold" onClick={() => void retry()}>
                   {t("common.retry")}
                 </button>
+                {rtcConfigured() ? (
+                  <button type="button" className="btn mt-6 ml-2 h-11 rounded-full px-6 text-sm font-semibold" onClick={() => { api.forgetHost(); window.location.replace("/"); }}>
+                    {t("link.repair")}
+                  </button>
+                ) : null}
               </div>
             ) : loading && !data ? (
-              <div className="px-4 pt-10 text-mute md:px-8" role="status">{t("common.loading")}</div>
+              <ConnectingView />
             ) : needsPair && !data ? (
               <PairGate />
             ) : (
@@ -130,6 +139,41 @@ function TaskBanner() {
         <div className="task-body">{note.body}</div>
       </div>
       <button type="button" aria-label="close" className="task-x" onClick={() => setNote(null)}><X size={16} /></button>
+    </div>
+  );
+}
+
+function LinkBanner() {
+  const { t, retry, error, data } = useApp();
+  const link = useLinkState();
+  if (!rtcConfigured()) return null;
+  const failed = link.phase === "failed" || (Boolean(error) && Boolean(data));
+  if (!failed && link.phase !== "connecting") return null;
+  return (
+    <div className={`link-banner ${failed ? "link-failed" : ""}`} role="status" data-testid="link-banner">
+      <div className="min-w-0 flex-1">
+        <div className="link-title">{failed ? t("link.failed") : `${t("link.connecting")}${link.stage ? ` · ${t(`link.stage.${link.stage}`)}` : ""}`}</div>
+        <div className="link-sub">{failed ? link.error || error || "" : data ? t("link.cached") : ""}</div>
+      </div>
+      {failed ? (
+        <>
+          <button type="button" className="link-btn" data-testid="link-retry" onClick={() => void retry()}>{t("link.retry")}</button>
+          <button type="button" className="link-btn" data-testid="link-repair" onClick={() => { api.forgetHost(); window.location.replace("/"); }}>{t("link.repair")}</button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function ConnectingView() {
+  const { t } = useApp();
+  const link = useLinkState();
+  return (
+    <div className="px-4 pt-6 md:px-8" role="status" data-testid="connecting">
+      <div className="skeleton h-28 w-full" />
+      <div className="skeleton mt-3 h-16 w-full" />
+      <div className="skeleton mt-3 h-16 w-full" />
+      <p className="mt-4 text-sm text-mute">{t("common.loading")}{link.stage ? ` · ${t(`link.stage.${link.stage}`)}` : ""}</p>
     </div>
   );
 }

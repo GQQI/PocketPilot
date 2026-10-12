@@ -1,3 +1,4 @@
+import type { AgentTestResult } from "@pocketpilot/protocol";
 import type { UsageDay, AgentAuth, AgentChatRequest, AgentProject, AgentSession, AgentUsage, ChatMessage, KeySource, StreamEvent, UsageBucket } from "@pocketpilot/protocol";
 
 export interface AgentCtx {
@@ -34,6 +35,8 @@ export interface LocalAgent {
   messages(sessionId: string, limit: number, ctx: AgentCtx): Promise<ChatMessage[]>;
   chat(req: AgentChatRequest, cli: string, ctx: AgentCtx, signal: AbortSignal): AsyncGenerator<StreamEvent>;
   usage(ctx: AgentCtx): Promise<AgentUsage>;
+  /** optional lightweight "test connection" (login status / key check) */
+  test?(ctx: AgentCtx, cli: string | null): Promise<AgentTestResult>;
 }
 
 export const emptyBucket = (): UsageBucket => ({ inputTokens: 0, outputTokens: 0, cacheTokens: 0, requests: 0, costUsd: null });
