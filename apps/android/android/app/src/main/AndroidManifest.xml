@@ -46,6 +46,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- QR pairing: camera for the ML Kit scanner and the WebView getUserMedia fallback. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Voice input uses the system recognizer (Web Speech API) and needs the microphone. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
