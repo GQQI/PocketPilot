@@ -2,9 +2,11 @@
 
 > 内容依据官方文档：https://docs.x.ai/docs/tutorial（查证日期 2026-10-11）。官方页面会改版，按钮名称以你看到的官方界面为准。
 
-## 先确认：你需要 API Key 吗？
+## 先登录；没有命令行时才用密钥
 
-PocketPilot 的 Grok 适配器走 xAI API（`https://api.x.ai/v1`），**需要 `XAI_API_KEY`**，不依赖本机安装 grok 命令行。设置了密钥后该平台即视为可用。
+如果电脑上有官方 `grok` 命令行，并且 `grok auth status` 显示已登录，PocketPilot 用这个登录态对话，**不会**把 `XAI_API_KEY` 传进去，也不会改走 api.x.ai。
+
+这台电脑没有可登录的 grok 命令行时，xAI 的接口本身没有登录态，只能用 `XAI_API_KEY`。密钥要能通过 `GET https://api.x.ai/v1/models` 才算可用。界面会说明当前走的是哪一种。
 
 ## 获取步骤
 

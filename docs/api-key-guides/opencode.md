@@ -2,9 +2,11 @@
 
 > 内容依据官方文档：https://opencode.ai/docs/providers/（查证日期 2026-10-11）。官方页面会改版，按钮名称以你看到的官方界面为准。
 
-## 先确认：你需要 API Key 吗？
+## 先登录
 
-OpenCode 自己通过 `/connect` 命令保存各模型提供商的凭据（存放在 `~/.local/share/opencode/auth.json`），你也可以直接使用它的任意提供商。PocketPilot 的密钥栏对应的是 **OpenCode Zen** 的密钥（`OPENCODE_API_KEY`），这是可选项。
+在电脑上运行 `opencode auth login`（或在 OpenCode 里 `/connect`）。凭据在 `~/.local/share/opencode/auth.json`。这份文件存在时，PocketPilot 用它，**不会**注入 `OPENCODE_API_KEY`。
+
+`OPENCODE_API_KEY` 只是备用：没有 `auth.json`、并且你保存了密钥时才会用。OpenCode 也可以在它自己的配置里接其他模型供应商，那种情况 PocketPilot 不会用保存的密钥去覆盖。
 
 ## 获取步骤
 

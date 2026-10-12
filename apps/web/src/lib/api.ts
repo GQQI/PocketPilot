@@ -184,17 +184,27 @@ function xhrSse(url: string, body: string, headers: Record<string, string>, onEv
     };
     xhr.open("POST", url);
     for (const [key, value] of Object.entries(headers)) xhr.setRequestHeader(key, value);
+    // Same-Wi-Fi phones use this XHR, not the WebRTC channel. WebView keeps responseText
+    // empty until ~4KB has arrived or the socket closes, so the bridge pads each frame.
+    // text/event-stream is what makes that buffer hold the whole body; force plain text.
+    xhr.setRequestHeader("x-pocketpilot-pad", "1");
+    try { xhr.setRequestHeader("accept-encoding", "identity"); } catch { /* browsers forbid this header; the bridge still sends Content-Encoding: identity */ }
+    try { xhr.overrideMimeType("text/plain; charset=utf-8"); } catch { /* already sent */ }
+    const poll = setInterval(() => pump(false), 32);
+    const stop = () => clearInterval(poll);
     xhr.onprogress = () => pump(false);
     xhr.onreadystatechange = () => { if (xhr.readyState === 3 || xhr.readyState === 4) pump(xhr.readyState === 4); };
-    xhr.onerror = () => reject(new ApiError("network", 0));
-    xhr.onabort = () => reject(new DOMException("aborted", "AbortError"));
+    xhr.onerror = () => { stop(); reject(new ApiError("network", 0)); };
+    xhr.onabort = () => { stop(); reject(new DOMException("aborted", "AbortError")); };
     xhr.onload = () => {
+      stop();
       pump(true);
       if (xhr.status >= 200 && xhr.status < 300) resolve();
       else reject(parseApiError(xhr.status, xhr.responseText));
     };
     const onAbort = () => xhr.abort();
     if (signal.aborted) {
+      stop();
       reject(new DOMException("aborted", "AbortError"));
       return;
     }

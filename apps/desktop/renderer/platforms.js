@@ -7,15 +7,19 @@
   const $ = (id) => document.getElementById(id);
   const L = {
     zh: {
-      title: "平台与密钥", hint: "为各智能体平台保存 API Key。密钥只保存在这台电脑（仅当前用户可读），不会发到手机，也不会写入日志。",
+      title: "平台与登录", hint: "优先使用各平台命令行自己的登录。API Key 只是备用，已登录时不会传给子进程。密钥只保存在这台电脑。",
       none: "未配置", set: (l4) => `已配置 ****${l4}`, noKey: "无需 API Key（使用该应用自己的登录）",
+      loggedIn: "已登录", loggedOut: "未登录", backupOn: "备用密钥", login: "登录", loginStarted: (cmd) => `已打开终端：${cmd}`,
+      backup: "备用密钥（可选）", keyOnly: "这个平台没有可登录的命令行，所以需要密钥。", loginHint: "在电脑上运行",
       ph: "粘贴或输入 API Key", paste: "粘贴", file: "从文件导入", save: "保存", test: "测试连接", del: "删除", guide: "获取密钥指南",
       testing: "测试中…", saved: "已保存", deleted: "已删除", imported: "已从文件导入并保存", badFile: "文件里没有找到密钥（支持单行密钥或 NAME=密钥）", empty: "剪贴板里没有文字",
       confirmDel: "再点一次确认删除", back: "关闭", loadFail: "无法读取平台列表（服务未运行？）", envNote: "也可通过系统环境变量：", ready: "可用", needInstall: "未安装", history: "仅历史",
     },
     en: {
-      title: "Platforms & keys", hint: "Store API keys per agent platform. Keys stay on this PC (current user only); they are never sent to phones or logged.",
+      title: "Platforms & sign-in", hint: "Each platform uses its own CLI login first. An API key is only a backup and is not passed to the process while you are signed in. Keys stay on this PC.",
       none: "Not set", set: (l4) => `Configured ****${l4}`, noKey: "No API key needed (uses the app's own sign-in)",
+      loggedIn: "Signed in", loggedOut: "Not signed in", backupOn: "Backup key", login: "Sign in", loginStarted: (cmd) => `Opened a terminal: ${cmd}`,
+      backup: "Backup key (optional)", keyOnly: "This platform has no CLI login, so a key is required.", loginHint: "On this PC run",
       ph: "Paste or type an API key", paste: "Paste", file: "Import from file", save: "Save", test: "Test connection", del: "Delete", guide: "How to get a key",
       testing: "Testing…", saved: "Saved", deleted: "Deleted", imported: "Imported from file and saved", badFile: "No key found in that file (a single key or NAME=key)", empty: "Clipboard has no text",
       confirmDel: "Click again to delete", back: "Close", loadFail: "Cannot load platforms (service not running?)", envNote: "Or via environment variable: ", ready: "ready", needInstall: "not installed", history: "history only",
@@ -52,20 +56,30 @@
 
   function card(p) {
     const needsKey = Array.isArray(p.envKeys) && p.envKeys.length > 0;
+    const loginCommand = p.auth && p.auth.loginCommand ? p.auth.loginCommand : "";
+    const signedIn = p.auth && p.auth.state === "ok" && p.auth.source === "login";
     const c = el("article", "card plat");
     const head = el("div", "plat-head");
     const badge = el("span", "plat-badge", (p.name || p.id).slice(0, 1).toUpperCase());
     head.append(badge);
     const names = el("div", "plat-names");
     names.append(el("div", "plat-name", p.name || p.id));
-    names.append(el("div", "muted small", needsKey ? p.envKeys.join(" / ") : tr("noKey")));
+    const sub = signedIn ? tr("loggedIn") : loginCommand ? tr("loggedOut") : (needsKey ? p.envKeys.join(" / ") : tr("noKey"));
+    names.append(el("div", "muted small", sub));
     head.append(names);
-    const state = el("span", "plat-state" + (p.keyLast4 ? " ok" : ""), needsKey ? (p.keyLast4 ? tr("set", p.keyLast4) : tr("none")) : "—");
+    const stateLabel = signedIn ? tr("loggedIn") : (p.auth && p.auth.state === "ok" && p.keyLast4 ? tr("backupOn") : (needsKey && p.keyLast4 ? tr("set", p.keyLast4) : (loginCommand ? tr("loggedOut") : (needsKey ? tr("none") : "—"))));
+    const state = el("span", "plat-state" + (signedIn || p.keyLast4 ? " ok" : ""), stateLabel);
     state.dataset.testid = "state-" + p.id;
     head.append(state);
     c.append(head);
 
+    if (p.auth && p.auth.note) c.append(el("p", "muted small", p.auth.note));
+    if (loginCommand && !signedIn) c.append(el("p", "muted small", tr("loginHint") + " " + loginCommand + (p.id === "claude-code" ? "  (/login)" : "")));
+
     if (needsKey) {
+      const box = loginCommand ? el("details", "plat-backup") : el("div");
+      if (loginCommand) box.append(el("summary", "muted small", tr("backup")));
+      else box.append(el("p", "muted small", tr("keyOnly")));
       const row = el("div", "inline plat-row");
       const input = el("input"); input.type = "password"; input.placeholder = tr("ph"); input.autocomplete = "off"; input.spellcheck = false; input.id = "key-" + p.id;
       row.append(input);
@@ -85,7 +99,8 @@
         if (cfg) { providers = cfg.providers; toastMsg(tr("saved"), true); render(); }
       });
       row.append(bPaste, bFile, bSave);
-      c.append(row);
+      box.append(row);
+      c.append(box);
     }
 
     const actions = el("div", "inline plat-row");
@@ -107,6 +122,14 @@
         if (cfg) { providers = cfg.providers; results.delete(p.id); toastMsg(tr("deleted"), true); render(); }
       });
       actions.append(bTest, bDel);
+    }
+    if (loginCommand) {
+      const bLogin = el("button", "btn primary", tr("login"));
+      bLogin.addEventListener("click", async () => {
+        const r = await call("platforms:login", loginCommand);
+        if (r && r.ok) toastMsg(tr("loginStarted", loginCommand), true);
+      });
+      actions.append(bLogin);
     }
     if (GUIDES.has(p.id)) {
       const bGuide = el("button", "btn link", tr("guide"));

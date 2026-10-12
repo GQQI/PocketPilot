@@ -76,7 +76,8 @@ export class LocalAgents {
       version: detection.version,
       hasHistory: detection.hasHistory,
       detected: installed || detection.hasHistory || detection.seen === true,
-      available: installed,
+      // Installed is not enough: a platform is ready when its CLI login or a backup key is actually usable.
+      available: installed && detection.auth.state !== "missing",
       auth: detection.auth,
       defaultModel: ctx.model || detection.defaultModel || meta.defaultModel,
       models: detection.models && detection.models.length ? detection.models : [...meta.models],
@@ -182,11 +183,12 @@ export class LocalAgents {
       yield { type: "error", message: ctx.locale === "en" ? `Project folder not found on this PC: ${cwd || "(empty)"}` : `电脑上找不到这个项目目录：${cwd || "（未选择）"}` };
       return;
     }
-    // Open the SSE response before detection. A cold `cursor-agent status` / `--list-models` used to run first, so the phone sat on a blank turn.
+    // Open the SSE response before any CLI work. A cached cli path is reused as-is:
+    // re-running `status` / `--list-models` here was an extra process before the real one.
     yield { type: "status", status: ctx.locale === "en" ? "Running on your PC…" : "正在电脑上运行…" };
-    let status = await this.status(id);
-    if (!status.cliPath) status = await this.status(id, true);
-    if (!status.cliPath) {
+    let cliPath = this.detectCache.get(id)?.value.cliPath ?? null;
+    if (!cliPath) cliPath = (await this.status(id, true)).cliPath;
+    if (!cliPath) {
       const meta = CATALOG.find((m) => m.id === id);
       yield {
         type: "error",
@@ -197,7 +199,7 @@ export class LocalAgents {
       return;
     }
     try {
-      yield* agent.chat({ ...req, prompt, cwd, model: req.model || ctx.model || undefined }, status.cliPath, ctx, signal);
+      yield* agent.chat({ ...req, prompt, cwd, model: req.model || ctx.model || undefined }, cliPath, ctx, signal);
     } finally {
       this.sessionCache.delete(id);
     }

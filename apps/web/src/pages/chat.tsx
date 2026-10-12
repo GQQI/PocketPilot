@@ -1,20 +1,20 @@
-import { ArrowLeft, ArrowUp, Mic, Square } from "lucide-react";
-import type { ChatMessage, MessageBlock, StreamEvent } from "@pocketpilot/protocol";
+import { ArrowLeft, ArrowUp, Square } from "lucide-react";
+import type { StreamEvent } from "@pocketpilot/protocol";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { RichText } from "@/components/rich-text";
 import { Button, EmptyState } from "@/components/ui";
+import { applyChatEvent, type ChatRow, type ChatTurn } from "@/lib/chat-stream";
 import { notifyTask } from "@/lib/notify";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/store";
-import { ensureMic, startVoice, voiceSupported } from "@/lib/voice";
 
-type UiMessage = ChatMessage & { error?: boolean };
+type UiMessage = ChatRow;
 
 export function ChatPage() {
   const { agent: agentId = "", sid = "new" } = useParams();
   const [params] = useSearchParams();
-  const { overview, t, setNotice, locale } = useApp();
+  const { overview, t, setNotice } = useApp();
   const navigate = useNavigate();
   const agent = overview?.agents.find((a) => a.id === agentId) ?? null;
   const isNew = sid === "new";
@@ -30,13 +30,11 @@ export function ChatPage() {
   const abortRef = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const area = useRef<HTMLTextAreaElement>(null);
-  const voiceStop = useRef<{ stop: () => void } | null>(null);
-  const [listening, setListening] = useState(false);
-  const [voiceOn, setVoiceOn] = useState(() => sessionStorage.getItem("pocketpilot.voice") === "1");
   const [model, setModel] = useState("");
   const stick = useRef(true);
   const streaming = useRef(false);
   const outcome = useRef({ text: "", error: "" });
+  const turn = useRef<ChatTurn>({ rows: [], status: "", sessionId: isNew ? "" : sid, text: "", error: "" });
 
   // existing session: load real history + find its project
   useEffect(() => {
@@ -45,7 +43,7 @@ export function ChatPage() {
     let cancelled = false;
     setLoaded(false);
     void api.agentMessages(agentId, sid, limit).then((rows) => {
-      if (!cancelled) { setMessages(rows); setLoaded(true); }
+      if (!cancelled) { turn.current = { ...turn.current, rows }; setMessages(rows); setLoaded(true); }
     }).catch(() => {
       if (!cancelled) { setMessages([]); setLoaded(true); }
     });
@@ -68,49 +66,16 @@ export function ChatPage() {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }
 
-  function patchLast(fn: (blocks: MessageBlock[]) => MessageBlock[]) {
-    setMessages((rows) => {
-      const last = rows[rows.length - 1];
-      if (!last || last.role !== "assistant") return rows;
-      return [...rows.slice(0, -1), { ...last, blocks: fn(last.blocks) }];
-    });
-  }
-
   function onEvent(event: StreamEvent) {
-    if (event.type === "status") setStatus(event.status);
-    else if (event.type === "session") {
-      setSessionId(event.id);
-      window.history.replaceState(null, "", `/chat/${agentId}/${event.id}`);
-    } else if (event.type === "text") {
-      outcome.current.text += event.delta;
-      setStatus("");
-      patchLast((blocks) => {
-        const last = blocks[blocks.length - 1];
-        if (last?.type === "text") return [...blocks.slice(0, -1), { type: "text", text: last.text + event.delta }];
-        return [...blocks, { type: "text", text: event.delta }];
-      });
-    } else if (event.type === "thinking") {
-      patchLast((blocks) => {
-        const last = blocks[blocks.length - 1];
-        if (last?.type === "thinking") return [...blocks.slice(0, -1), { type: "thinking", text: last.text + event.delta }];
-        return [...blocks, { type: "thinking", text: event.delta }];
-      });
-    } else if (event.type === "tool") {
-      patchLast((blocks) => {
-        if (event.phase === "done") {
-          const at = blocks.findLastIndex((b) => b.type === "tool" && b.name === event.name && b.status === "running");
-          if (at >= 0) return blocks.map((b, i) => (i === at && b.type === "tool" ? { ...b, status: "done" as const, detail: event.detail || b.detail, input: b.input || event.input, output: event.output || b.output } : b));
-        }
-        return [...blocks, { type: "tool", name: event.name, detail: event.detail, status: event.phase === "done" ? "done" : "running", ...(event.input ? { input: event.input } : {}), ...(event.output ? { output: event.output } : {}) }];
-      });
-    } else if (event.type === "error") {
-      outcome.current.error = event.message;
-      setMessages((rows) => {
-        const last = rows[rows.length - 1];
-        const rest = last && last.role === "assistant" && last.blocks.length === 0 ? rows.slice(0, -1) : rows;
-        return [...rest, { id: `err_${Date.now()}`, role: "assistant", createdAt: new Date().toISOString(), blocks: [{ type: "text", text: event.message }], error: true }];
-      });
+    const next = applyChatEvent(turn.current, event);
+    turn.current = next;
+    outcome.current = { text: next.text, error: next.error };
+    if (event.type === "session" && next.sessionId) {
+      setSessionId(next.sessionId);
+      window.history.replaceState(null, "", `/chat/${agentId}/${next.sessionId}`);
     }
+    if (event.type === "status" || event.type === "text") setStatus(next.status);
+    setMessages(next.rows);
   }
 
   async function send(textOverride?: string) {
@@ -121,11 +86,13 @@ export function ChatPage() {
     requestAnimationFrame(autosize);
     stick.current = true;
     const now = new Date().toISOString();
-    setMessages((rows) => [
-      ...rows,
+    const rows: UiMessage[] = [
+      ...turn.current.rows,
       { id: `u_${Date.now()}`, role: "user", createdAt: now, blocks: [{ type: "text", text }] },
       { id: `a_${Date.now()}`, role: "assistant", createdAt: now, blocks: [] },
-    ]);
+    ];
+    turn.current = { ...turn.current, rows, text: "", error: "" };
+    setMessages(rows);
     if (!title) setTitle(text.slice(0, 40));
     const controller = new AbortController();
     abortRef.current = controller;
@@ -147,30 +114,12 @@ export function ChatPage() {
         const summary = (failed ? outcome.current.error : outcome.current.text).replace(/\s+/g, " ").trim().slice(0, 120);
         void notifyTask({ title: `${agent.name}${proj ? ` · ${proj}` : ""}`, body: summary || (failed ? t("s.n.failed") : t("s.n.done")), kind: failed ? "error" : "done" });
       }
-      setMessages((rows) => rows.filter((row, i) => !(i === rows.length - 1 && row.role === "assistant" && row.blocks.length === 0)));
+      setMessages((rows) => {
+        const next = rows.filter((row, i) => !(i === rows.length - 1 && row.role === "assistant" && row.blocks.length === 0));
+        turn.current = { ...turn.current, rows: next };
+        return next;
+      });
     }
-  }
-
-  async function listen() {
-    if (listening) {
-      voiceStop.current?.stop();
-      return;
-    }
-    if (!voiceSupported()) { setNotice(t("a.voiceMissing")); return; }
-    const mic = await ensureMic();
-    if (mic === "denied") { setNotice(t("a.voiceDenied")); return; }
-    const handle = startVoice({
-      lang: locale === "en" ? "en-US" : "zh-CN",
-      onText: (text, final) => {
-        setDraft(text);
-        if (final && voiceOn) void send(text);
-      },
-      onError: (code) => setNotice(code === "not-allowed" || code === "service-not-allowed" ? t("a.voiceDenied") : t("a.voiceMissing")),
-      onEnd: () => { setListening(false); voiceStop.current = null; },
-    });
-    if (!handle) { setNotice(t("a.voiceMissing")); return; }
-    voiceStop.current = handle;
-    setListening(true);
   }
 
   useEffect(() => {
@@ -227,19 +176,6 @@ export function ChatPage() {
             </select>
           </label>
         ) : null}
-        <div className="mb-2 flex items-center gap-2">
-          <button
-            type="button"
-            className={`chip ${voiceOn ? "chip-on" : ""}`}
-            data-testid="voice-mode"
-            onClick={() => {
-              const next = !voiceOn;
-              setVoiceOn(next);
-              sessionStorage.setItem("pocketpilot.voice", next ? "1" : "0");
-            }}
-          >{t("a.voiceMode")}</button>
-          {voiceOn ? <span className="text-[11px] text-mute">{t("a.voiceNeed")}</span> : null}
-        </div>
         <div className="composer">
           <textarea
             ref={area}
@@ -256,12 +192,7 @@ export function ChatPage() {
           {running ? (
             <button type="button" className="send-btn send-stop" aria-label={t("a.stop")} data-testid="stop" onClick={() => abortRef.current?.abort()}><Square size={14} fill="currentColor" /></button>
           ) : (
-            <>
-              <button type="button" className={`mic-btn ${listening ? "mic-on" : ""}`} aria-label={t("a.voice")} data-testid="voice" disabled={!canSend} onClick={() => void listen()}>
-                <Mic size={16} />
-              </button>
-              <button type="button" className="send-btn" aria-label={t("a.send")} data-testid="send" disabled={!draft.trim() || !canSend} onClick={() => void send()}><ArrowUp size={18} strokeWidth={2.5} /></button>
-            </>
+            <button type="button" className="send-btn" aria-label={t("a.send")} data-testid="send" disabled={!draft.trim() || !canSend} onClick={() => void send()}><ArrowUp size={18} strokeWidth={2.5} /></button>
           )}
         </div>
       </div>

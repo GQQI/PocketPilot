@@ -2,9 +2,11 @@
 
 > 内容依据官方文档：https://docs.claude.com/en/docs/claude-code/setup（查证日期 2026-10-11）。官方页面会改版，按钮名称以你看到的官方界面为准。
 
-## 先确认：你需要 API Key 吗？
+## 先登录
 
-官方文档：Claude Code 需要 Pro、Max、Team、Enterprise 或 **Console** 账号，免费的 claude.ai 套餐不包含 Claude Code。最常见的做法是运行 `claude` 并按浏览器提示登录（订阅用户无需 API Key）。如果设置了环境变量 `ANTHROPIC_API_KEY` 并在 Claude Code 询问时确认使用，它会跳过登录提示——这就是 PocketPilot 保存密钥的用途（按量计费的 Console 账号）。
+在电脑上打开 `claude`，输入 `/login`，用订阅或 CLI 登录。PocketPilot 认 `~/.claude` 里的登录（凭据文件或 Claude 自己的 settings）。已经登录时，**不会**把保存的 `ANTHROPIC_API_KEY` 传给 Claude Agent SDK 或 `claude` 进程。
+
+API Key 只是备用：没登录、并且你在 PocketPilot 里保存了密钥时才会用它。官方文档仍要求 Pro、Max、Team、Enterprise 或 Console 账号；免费的 claude.ai 套餐不包含 Claude Code。
 
 ## 获取步骤
 

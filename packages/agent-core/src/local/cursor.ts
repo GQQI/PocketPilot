@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent } from "@pocketpilot/protocol";
 import { baseName, cap, exists, FileCache, prettyError, fileUriToPath, findExecutable, home, isDir, listDir, normPath, oneLine, readLines, resolveSlug, runCapture, runStream, safeStat, slugify, startOfToday, tryJson } from "./util";
+import { childEnv, decideLogin } from "./login";
 import { dailyTotals, emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 /**
@@ -143,7 +144,8 @@ let loginCache: { key: string; at: number; value: { ok: boolean; email: string; 
 /** `cursor-agent status` decides login from local tokens: "Logged in as x@y" / "Logged in" / "Not logged in". */
 async function loginStatus(cli: string, ctx: AgentCtx): Promise<{ ok: boolean; email: string; text: string }> {
   if (loginCache && loginCache.key === cli && Date.now() - loginCache.at < 60_000) return loginCache.value;
-  const r = await runCapture(cli, ["status"], { env: ctx.env, timeoutMs: 20_000 });
+  // Probe login without a saved key, or the key can hide "Logged in".
+  const r = await runCapture(cli, ["status"], { env: childEnv(ctx.env, ["CURSOR_API_KEY"], false), timeoutMs: 20_000 });
   const out = stripAnsi(`${r.stdout}\n${r.stderr}`);
   const email = /Logged in as\s+([^\s@]+@[^\s]+)/i.exec(out)?.[1] ?? "";
   const ok = r.code === 0 && /Logged in/i.test(out) && !/not logged in/i.test(out);
@@ -174,21 +176,21 @@ export const cursorAgent: LocalAgent = {
   async detect(ctx): Promise<Detection> {
     const cli = await locateCli(ctx);
     const hasHistory = listTranscripts().length > 0 || readOur(ctx.dataDir).length > 0;
-    const hasKey = ctx.keySource !== "none";
-    let auth: Detection["auth"];
-    let models: string[] = [];
-    if (cli.cliPath) {
-      const login = await loginStatus(cli.cliPath, ctx).catch(() => null);
-      models = login?.ok || hasKey ? await listModels(cli.cliPath, ctx).catch(() => []) : [];
-      if (login?.ok) auth = { state: "ok", source: "cli", note: login.email ? `cursor-agent: ${login.email}` : "cursor-agent status: Logged in" };
-      else if (hasKey) auth = { state: "ok", source: ctx.keySource, note: "CURSOR_API_KEY" };
-      else auth = { state: "missing", source: "cli", note: ctx.locale === "en" ? "Not signed in. Run `cursor-agent login` on the PC, or save a CURSOR_API_KEY below." : "尚未登录：请在电脑上运行 cursor-agent login，或在下方保存 CURSOR_API_KEY。" };
-    } else {
-      auth = hasKey
-        ? { state: "ok", source: ctx.keySource, note: "CURSOR_API_KEY" }
-        : { state: "missing", source: "none", note: ctx.locale === "en" ? "cursor-agent not found and no CURSOR_API_KEY" : "未找到 cursor-agent，也没有配置 CURSOR_API_KEY" };
-    }
-    return { ...cli, hasHistory, dataPath: root(), auth, models };
+    const login = cli.cliPath ? await loginStatus(cli.cliPath, ctx).catch(() => null) : null;
+    const decision = decideLogin({
+      present: Boolean(cli.cliPath),
+      loggedIn: Boolean(login?.ok),
+      keySource: ctx.keySource,
+      loginCommand: "cursor-agent login",
+      keyName: "CURSOR_API_KEY",
+      locale: ctx.locale,
+      loginDetail: login?.email || (login?.ok ? "cursor-agent status" : undefined),
+      absentNote: ctx.locale === "en" ? "cursor-agent was not found and no backup key is saved." : "未找到 cursor-agent，也没有备用密钥。",
+    });
+    const models = cli.cliPath && decision.auth.state === "ok"
+      ? await listModels(cli.cliPath, { ...ctx, env: childEnv(ctx.env, ["CURSOR_API_KEY"], decision.useKey) }).catch(() => [])
+      : [];
+    return { ...cli, hasHistory, dataPath: root(), auth: decision.auth, models };
   },
 
   async test(ctx, cli): Promise<AgentTestResult> {
@@ -197,13 +199,13 @@ export const cursorAgent: LocalAgent = {
     loginCache = null;
     modelCache = null;
     const login = await loginStatus(cli, ctx).catch(() => null);
-    if (login?.ok) return { ok: true, message: zh ? `cursor-agent 已登录${login.email ? `：${login.email}` : ""}。` : `cursor-agent is signed in${login.email ? `: ${login.email}` : ""}.` };
+    if (login?.ok) return { ok: true, message: zh ? `cursor-agent 已登录${login.email ? `：${login.email}` : ""}。已保存的密钥不会覆盖这次登录。` : `cursor-agent is signed in${login.email ? `: ${login.email}` : ""}. A saved key is not applied over this login.` };
     if (ctx.keySource !== "none") {
       const models = await listModels(cli, ctx).catch(() => [] as string[]);
       if (models.length > 0) return { ok: true, message: zh ? `CURSOR_API_KEY 可用，能获取 ${models.length} 个模型。` : `CURSOR_API_KEY works: ${models.length} models.` };
       return { ok: false, message: zh ? "密钥已保存，但 cursor-agent 用它取不到模型：请确认密钥有效（Cursor Dashboard → API Keys）。" : "A key is saved but cursor-agent could not list models with it. Check it in Cursor Dashboard → API Keys." };
     }
-    return { ok: false, message: zh ? "cursor-agent 未登录，也没有 API Key：运行 cursor-agent login，或填写密钥。" : "Not signed in and no API key." };
+    return { ok: false, message: zh ? "cursor-agent 未登录，也没有备用密钥。请在电脑上运行 cursor-agent login。" : "Not signed in and no backup key. Run cursor-agent login on this PC." };
   },
 
   async sessions(ctx): Promise<AgentSession[]> {
@@ -250,8 +252,14 @@ export const cursorAgent: LocalAgent = {
   },
 
   async *chat(req: AgentChatRequest, cli: string, ctx: AgentCtx, signal: AbortSignal): AsyncGenerator<StreamEvent> {
+    // `cursor-agent -p` is a one-shot process: it prints the turn and exits. `--resume` reuses the
+    // remote chat, but the CLI still starts again. There is no verified headless daemon to keep
+    // warm, so this path does not spawn `status` or `--list-models` before the print process.
     const args = cursorPrintArgs(req);
-    const env = { ...ctx.env };
+    // Inject the saved key only after a probe said "not logged in". A missing probe must not
+    // overwrite a CLI login: `cursor-agent` prefers CURSOR_API_KEY over the local login.
+    const confirmedOut = loginCache?.value.ok === false;
+    const env = childEnv(ctx.env, ["CURSOR_API_KEY"], confirmedOut && ctx.keySource !== "none");
     let text = "";
     let sessionId = req.sessionId ?? "";
     let failed = "";
@@ -504,7 +512,7 @@ function recordOur(dataDir: string, id: string, req: AgentChatRequest, answer: s
 function explain(message: string, ctx: AgentCtx): string {
   const m = prettyError(message);
   if (/login|log in|auth|unauthor|api key|not logged/i.test(m)) {
-    return ctx.locale === "en" ? `Cursor is not signed in: run "cursor-agent login" on the PC or set CURSOR_API_KEY. (${cap(m, 160)})` : `Cursor 未登录：请在电脑上运行 cursor-agent login，或在设置里填写 CURSOR_API_KEY。（${cap(m, 160)}）`;
+    return ctx.locale === "en" ? `Cursor is not signed in: run "cursor-agent login" on the PC. A saved key is only a backup. (${cap(m, 160)})` : `Cursor 未登录：请在电脑上运行 cursor-agent login。密钥只是备用。（${cap(m, 160)}）`;
   }
   return cap(m, 600);
 }

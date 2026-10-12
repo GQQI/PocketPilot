@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, StreamEvent, UsageBucket } from "@pocketpilot/protocol";
 import { baseName, cap, exists, findExecutable, home, listDir, oneLine, readHead, runCapture, runStream, safeStat, startOfToday } from "./util";
+import { childEnv, decideLogin } from "./login";
 import { emptyBucket, unsupportedUsage, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 function readJson<T>(file: string): T | null {
@@ -21,10 +22,10 @@ async function detectCli(ctx: AgentCtx, name: string, dirs: string[]): Promise<{
   return { cliPath: found, version: v ? cap(v, 80) : null };
 }
 
-async function* plainChat(cli: string, args: string[], req: AgentChatRequest, ctx: AgentCtx, signal: AbortSignal, name: string): AsyncGenerator<StreamEvent> {
+async function* plainChat(cli: string, args: string[], req: AgentChatRequest, ctx: AgentCtx, signal: AbortSignal, name: string, env: NodeJS.ProcessEnv = ctx.env): AsyncGenerator<StreamEvent> {
   let any = false;
   let exit: { code: number | null; stderr: string } | null = null;
-  for await (const item of runStream(cli, args, { cwd: req.cwd, env: ctx.env, json: false, signal })) {
+  for await (const item of runStream(cli, args, { cwd: req.cwd, env, json: false, signal })) {
     if (item.kind === "exit") { exit = item; break; }
     if (item.kind === "text") { any = true; yield { type: "text", delta: item.text }; }
   }
@@ -69,8 +70,18 @@ export const geminiAgent: LocalAgent = {
   async detect(ctx): Promise<Detection> {
     const cli = await detectCli(ctx, "gemini", [path.join(process.env.APPDATA ?? "", "npm")]);
     const oauth = exists(path.join(home(), ".gemini", "oauth_creds.json"));
-    const auth = ctx.keySource !== "none" ? { state: "ok" as const, source: ctx.keySource, note: "GEMINI_API_KEY" } : oauth ? { state: "ok" as const, source: "login", note: "Google 账号登录" } : cli.cliPath ? { state: "missing" as const, source: "none", note: "未登录，也没有 GEMINI_API_KEY" } : { state: "missing" as const, source: "none", note: "未找到 gemini" };
-    return { ...cli, hasHistory: geminiFiles().length > 0, auth, dataPath: geminiRoot() };
+    const decision = decideLogin({
+      present: Boolean(cli.cliPath),
+      loggedIn: oauth,
+      keySource: ctx.keySource,
+      loginCommand: "gemini",
+      keyName: "GEMINI_API_KEY",
+      locale: ctx.locale,
+      loginDetail: oauth ? "~/.gemini/oauth_creds.json" : undefined,
+      absentNote: ctx.locale === "en" ? "gemini was not found and no backup key is saved." : "未找到 gemini，也没有备用密钥。",
+      loggedOutNote: ctx.locale === "en" ? "Not signed in and no backup key. Run gemini on this PC and finish the Google sign-in." : "未登录，也没有备用密钥。请在电脑上运行 gemini，完成 Google 登录。",
+    });
+    return { ...cli, hasHistory: geminiFiles().length > 0, auth: decision.auth, dataPath: geminiRoot() };
   },
   async sessions(): Promise<AgentSession[]> {
     const out: AgentSession[] = [];
@@ -91,7 +102,9 @@ export const geminiAgent: LocalAgent = {
   chat(req, cli, ctx, signal) {
     const args = ["-p", req.prompt];
     if (req.model) args.unshift("-m", req.model);
-    return plainChat(cli, args, req, ctx, signal, "gemini");
+    const loggedIn = exists(path.join(home(), ".gemini", "oauth_creds.json"));
+    const env = childEnv(ctx.env, ["GEMINI_API_KEY", "GOOGLE_API_KEY"], !loggedIn && ctx.keySource !== "none");
+    return plainChat(cli, args, req, ctx, signal, "gemini", env);
   },
   async usage(): Promise<AgentUsage> {
     const t0 = startOfToday();
@@ -132,8 +145,21 @@ export const opencodeAgent: LocalAgent = {
   async detect(ctx): Promise<Detection> {
     const cli = await detectCli(ctx, "opencode", [path.join(process.env.APPDATA ?? "", "npm"), path.join(home(), ".opencode", "bin")]);
     const authed = exists(path.join(home(), ".local", "share", "opencode", "auth.json"));
-    const auth = ctx.keySource !== "none" ? { state: "ok" as const, source: ctx.keySource, note: "OPENCODE_API_KEY" } : authed ? { state: "ok" as const, source: "login", note: "opencode auth（auth.json）" } : cli.cliPath ? { state: "unknown" as const, source: "cli", note: "未发现登录信息；opencode 可能使用其他模型供应商的密钥" } : { state: "missing" as const, source: "none", note: "未找到 opencode" };
-    return { ...cli, hasHistory: ocSessions().length > 0, auth, dataPath: ocRoot() };
+    const decision = decideLogin({
+      present: Boolean(cli.cliPath),
+      loggedIn: authed,
+      keySource: ctx.keySource,
+      loginCommand: "opencode auth login",
+      keyName: "OPENCODE_API_KEY",
+      locale: ctx.locale,
+      loginDetail: authed ? "auth.json" : undefined,
+      absentNote: ctx.locale === "en" ? "opencode was not found and no backup key is saved." : "未找到 opencode，也没有备用密钥。",
+      whenNeither: "unknown",
+      loggedOutNote: ctx.locale === "en"
+        ? "No opencode auth.json yet. Run `opencode auth login` on this PC. A saved key is not injected until login is confirmed absent."
+        : "还没有 opencode 的 auth.json。请在电脑上运行 opencode auth login。未确认已登录时不会注入密钥。",
+    });
+    return { ...cli, hasHistory: ocSessions().length > 0, auth: decision.auth, dataPath: ocRoot() };
   },
   async sessions(): Promise<AgentSession[]> {
     return ocSessions().map((s): AgentSession => ({ id: s.id, agentId: "opencode", title: s.title || "（未命名）", projectPath: s.directory ?? "", projectName: s.directory ? baseName(s.directory) : "", updatedAt: new Date(s.time?.updated ?? s.time?.created ?? 0).toISOString(), messageCount: listDir(path.join(ocRoot(), "message", s.id)).length, preview: "", source: "opencode-storage" })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -155,7 +181,9 @@ export const opencodeAgent: LocalAgent = {
     if (req.sessionId) args.push("--session", req.sessionId);
     if (req.model) args.push("--model", req.model);
     args.push(req.prompt);
-    return plainChat(cli, args, req, ctx, signal, "opencode");
+    const loggedIn = exists(path.join(home(), ".local", "share", "opencode", "auth.json"));
+    const env = childEnv(ctx.env, ["OPENCODE_API_KEY"], !loggedIn && ctx.keySource !== "none");
+    return plainChat(cli, args, req, ctx, signal, "opencode", env);
   },
   async usage(): Promise<AgentUsage> {
     return unsupportedUsage("opencode", "OpenCode 的用量记录在其 storage 里按模型供应商不同而不同，PocketPilot 暂未实现读取。");
@@ -168,8 +196,22 @@ export const deepseekAgent: LocalAgent = {
   history: false,
   async detect(ctx): Promise<Detection> {
     const cli = await detectCli(ctx, "dsh", [path.join(process.env.APPDATA ?? "", "npm"), path.join(home(), ".local", "bin")]);
-    const auth = ctx.keySource !== "none" ? { state: "ok" as const, source: ctx.keySource, note: "DEEPSEEK_API_KEY" } : { state: "missing" as const, source: "none", note: "没有配置 DEEPSEEK_API_KEY" };
-    return { ...cli, hasHistory: false, auth, dataPath: "" };
+    const zh = ctx.locale !== "en";
+    const reason = zh
+      ? "DeepSeek Harness（dsh）没有本机登录命令，只能用 DEEPSEEK_API_KEY。这不是可选备用。"
+      : "DeepSeek Harness (dsh) has no local login command. DEEPSEEK_API_KEY is required, not an optional backup.";
+    const decision = decideLogin({
+      present: Boolean(cli.cliPath),
+      loggedIn: false,
+      keySource: ctx.keySource,
+      loginCommand: "",
+      keyName: "DEEPSEEK_API_KEY",
+      locale: ctx.locale,
+      keyOnlyReason: reason,
+      absentNote: reason,
+      loggedOutNote: reason,
+    });
+    return { ...cli, hasHistory: false, auth: decision.auth, dataPath: "" };
   },
   async sessions(): Promise<AgentSession[]> { return []; },
   async extraProjects(): Promise<string[]> { return []; },
