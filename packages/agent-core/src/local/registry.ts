@@ -11,6 +11,7 @@ import { cursorAgent } from "./cursor";
 import { cliOnlyAgents } from "./others";
 import { grokAgent, traeAgent } from "./more";
 import type { AgentCtx, LocalAgent } from "./types";
+import { dedupeSessions } from "./dedupe";
 import { baseName, normPath, isDir } from "./util";
 
 const CATALOG: ProviderMeta[] = [...BUILTIN, ...LOCAL_ONLY];
@@ -124,7 +125,7 @@ export class LocalAgents {
   private async allSessions(id: string, force = false): Promise<AgentSession[]> {
     const hit = this.sessionCache.get(id);
     if (!force && hit && Date.now() - hit.at < 8000) return hit.value;
-    const value = await this.agent(id).sessions(this.ctxFor(id));
+    const value = dedupeSessions(await this.agent(id).sessions(this.ctxFor(id)));
     value.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     this.sessionCache.set(id, { at: Date.now(), value });
     return value;

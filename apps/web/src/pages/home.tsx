@@ -86,7 +86,7 @@ export function HomePage() {
         </div>
         {agent ? (
           <div className="hero-agent" data-testid="current-agent">
-            <Mark monogram={agent.monogram} accent={agent.accent} />
+            <Mark id={agent.id} monogram={agent.monogram} accent={agent.accent} />
             <div className="min-w-0 flex-1">
               <div className="font-semibold">{agent.name}</div>
               <div className="hero-agent-sub"><span className={`dot dot-${state}`} />{statusLabel(agent.available, agent.hasHistory, t, needsKey(agent))}{agent.version ? ` · ${agent.version}` : ""}</div>
@@ -117,7 +117,7 @@ export function HomePage() {
                 const u = usageMap[a.id];
                 return (
                   <div key={a.id} className={`plat-card ${a.id === agent.id ? "plat-card-on" : ""}`}>
-                    <div className="flex items-center gap-2"><Mark monogram={a.monogram} accent={a.accent} /><span className="truncate text-sm font-semibold">{a.name}</span></div>
+                    <div className="flex items-center gap-2"><Mark id={a.id} monogram={a.monogram} accent={a.accent} /><span className="truncate text-sm font-semibold">{a.name}</span></div>
                     {u === undefined ? <div className="plat-line mt-2">{t("set.usageLoading")}</div> : u === null || !u.supported ? (
                       <div className="plat-line mt-2">{t("set.noUsage")}</div>
                     ) : u.hasTokens ? (

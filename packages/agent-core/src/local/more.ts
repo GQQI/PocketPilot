@@ -2,7 +2,7 @@ import type { AgentTestResult } from "@pocketpilot/protocol";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, StreamEvent } from "@pocketpilot/protocol";
-import { baseName, cap, exists, fileUriToPath, findExecutable, home, listDir, normPath, oneLine, readLines, runCapture, runStream, safeStat, startOfToday, tryJson } from "./util";
+import { baseName, cap, exists, fileUriToPath, findExecutable, home, isDir, listDir, normPath, oneLine, readLines, runCapture, runStream, safeStat, startOfToday, tryJson } from "./util";
 import { dailyTotals, emptyBucket, unsupportedUsage, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 /* =====================================================================================
@@ -33,39 +33,91 @@ function traeWorkspaces(): string[] {
   return out;
 }
 
-function traeRollouts(): { file: string; id: string; mtime: number }[] {
-  const out: { file: string; id: string; mtime: number }[] = [];
+const TRAE_UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+function traeRollouts(): { file: string; id: string; threadHint: string; mtime: number }[] {
+  const out: { file: string; id: string; threadHint: string; mtime: number }[] = [];
   const walk = (dir: string, depth: number) => {
     for (const n of listDir(dir)) {
       const full = path.join(dir, n);
-      if (depth < 3) { walk(full, depth + 1); continue; }
-      if (!/^rollout-.*\.jsonl$/.test(n)) continue;
+      if (isDir(full)) {
+        if (depth < 6) walk(full, depth + 1);
+        continue;
+      }
+      if (!n.endsWith(".jsonl") || depth < 1) continue;
       const st = safeStat(full);
-      const id = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i.exec(n)?.[1] ?? n.replace(/\.jsonl$/, "");
-      if (st) out.push({ file: full, id, mtime: st.mtimeMs });
+      if (!st) continue;
+      const fileUuid = TRAE_UUID.exec(n)?.[0] ?? "";
+      const parent = path.basename(dir);
+      const parentUuid = TRAE_UUID.test(parent) ? parent : "";
+      const id = fileUuid || parentUuid || n.replace(/\.jsonl$/, "");
+      out.push({ file: full, id, threadHint: parentUuid || fileUuid || id, mtime: st.mtimeMs });
     }
   };
   walk(traeCliRoot(), 0);
   return out;
 }
 
+export interface TraeRecord {
+  id: string;
+  threadId: string;
+  cwd: string;
+  title: string;
+  mtime: number;
+  preview: string;
+}
+
+/** Collapse per-message / per-rollout rows into one conversation. Untitled and injected system rows are dropped. */
+export function groupTraeRecords(records: TraeRecord[]): TraeRecord[] {
+  const groups = new Map<string, TraeRecord>();
+  for (const raw of records) {
+    const title = raw.title.trim();
+    if (!title || title.startsWith("<")) continue;
+    const key = raw.threadId || raw.id;
+    const prev = groups.get(key);
+    if (!prev) {
+      groups.set(key, { ...raw, threadId: key, title });
+      continue;
+    }
+    const newer = raw.mtime >= prev.mtime;
+    groups.set(key, {
+      ...prev,
+      threadId: key,
+      mtime: Math.max(prev.mtime, raw.mtime),
+      cwd: raw.cwd || prev.cwd,
+      title: prev.title || title,
+      preview: newer && raw.preview ? raw.preview : prev.preview || raw.preview,
+    });
+  }
+  return [...groups.values()];
+}
+
 function msgText(content: unknown): string {
   return (Array.isArray(content) ? content : []).map((p) => (p && typeof p === "object" && typeof (p as { text?: unknown }).text === "string" ? (p as { text: string }).text : "")).join("");
 }
 
-async function traeMeta(file: string): Promise<{ cwd: string; title: string }> {
-  let cwd = "", title = "", n = 0;
+async function traeMeta(file: string): Promise<{ cwd: string; title: string; threadId: string; preview: string }> {
+  let cwd = "", title = "", threadId = "", preview = "", n = 0;
   for await (const line of readLines(file)) {
     const j = tryJson(line);
     const p = j?.payload as Record<string, unknown> | undefined;
-    if (j?.type === "session_meta" && typeof p?.cwd === "string") cwd = p.cwd;
-    if (j?.type === "response_item" && p?.type === "message" && p.role === "user") {
-      const t = msgText(p.content).trim();
-      if (t && !t.startsWith("<")) { title = oneLine(t, 80); break; }
+    if (j?.type === "session_meta" && p) {
+      if (typeof p.cwd === "string") cwd = p.cwd;
+      const id = p.id ?? p.session_id ?? p.thread_id ?? p.conversation_id;
+      if (typeof id === "string" && id) threadId = id;
     }
+    if (j?.type === "response_item" && p?.type === "message" && p.role === "user" && !title) {
+      const t = msgText(p.content).trim();
+      if (t && !t.startsWith("<")) title = oneLine(t, 80);
+    }
+    if (j?.type === "response_item" && p?.type === "message" && p.role === "assistant" && !preview) {
+      const t = msgText(p.content).trim();
+      if (t) preview = oneLine(t, 100);
+    }
+    if (title && preview && threadId) break;
     if (++n > 200) break;
   }
-  return { cwd, title };
+  return { cwd, title, threadId, preview };
 }
 
 export const traeAgent: LocalAgent = {
@@ -90,22 +142,30 @@ export const traeAgent: LocalAgent = {
     return { cliPath: found, version: version ? cap(version, 80) : null, hasHistory: ide || traeRollouts().length > 0, auth, dataPath: traeDirs()[0] ?? traeCliRoot() };
   },
   async sessions(): Promise<AgentSession[]> {
-    const out: AgentSession[] = [];
-    for (const r of traeRollouts().sort((a, b) => b.mtime - a.mtime)) {
+    const records: TraeRecord[] = [];
+    for (const r of traeRollouts()) {
       const m = await traeMeta(r.file);
-      out.push({ id: r.id, agentId: "trae-cn", title: m.title || "TRAE CLI", projectPath: m.cwd, projectName: m.cwd ? baseName(m.cwd) : "", updatedAt: new Date(r.mtime).toISOString(), messageCount: -1, preview: "", source: "trae-cli" });
+      records.push({ id: r.id, threadId: m.threadId || r.threadHint, cwd: m.cwd, title: m.title, mtime: r.mtime, preview: m.preview });
     }
-    return out;
+    return groupTraeRecords(records)
+      .sort((a, b) => b.mtime - a.mtime)
+      .map((r) => ({ id: r.threadId, agentId: "trae-cn", title: r.title, projectPath: r.cwd, projectName: r.cwd ? baseName(r.cwd) : "", updatedAt: new Date(r.mtime).toISOString(), messageCount: -1, preview: r.preview, source: "trae-cli" }));
   },
   async extraProjects(): Promise<string[]> {
     return traeWorkspaces();
   },
   async messages(sessionId, limit): Promise<ChatMessage[]> {
-    const r = traeRollouts().find((x) => x.id === sessionId);
-    if (!r) return [];
+    const files: { file: string; mtime: number }[] = [];
+    for (const r of traeRollouts()) {
+      const m = await traeMeta(r.file);
+      const thread = m.threadId || r.threadHint;
+      if (thread === sessionId || r.id === sessionId) files.push({ file: r.file, mtime: r.mtime });
+    }
+    files.sort((a, b) => a.mtime - b.mtime);
+    if (!files.length) return [];
     const out: ChatMessage[] = [];
     let n = 0;
-    for await (const line of readLines(r.file)) {
+    for (const r of files) for await (const line of readLines(r.file)) {
       const j = tryJson(line);
       const p = j?.payload as Record<string, unknown> | undefined;
       if (j?.type !== "response_item" || p?.type !== "message") continue;
@@ -160,6 +220,73 @@ function grokRead(dir: string): GrokChat[] {
 function grokWrite(dir: string, list: GrokChat[]): void {
   mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, GROK_STORE), JSON.stringify(list.slice(0, 200)));
+}
+
+/** Persist the turn even when the API fails, so the session still shows up in history. */
+function grokRemember(dir: string, id: string, cwd: string, prompt: string, assistant: string | null): void {
+  if (exists(path.join(dir, "no-history"))) return;
+  try {
+    const list = grokRead(dir);
+    const now = new Date().toISOString();
+    let chat = list.find((c) => c.id === id);
+    if (!chat) {
+      chat = { id, cwd, title: oneLine(prompt, 60), updatedAt: now, messages: [{ role: "user", text: prompt, at: now }] };
+      list.unshift(chat);
+    } else if (assistant === null) {
+      const last = chat.messages.at(-1);
+      if (!(last?.role === "user" && last.text === prompt)) chat.messages.push({ role: "user", text: prompt, at: now });
+    }
+    if (assistant !== null) {
+      const last = chat.messages.at(-1);
+      if (last?.role === "assistant") last.text = assistant;
+      else chat.messages.push({ role: "assistant", text: assistant, at: now });
+    }
+    chat.updatedAt = now;
+    grokWrite(dir, list);
+  } catch {
+    /* history is best effort */
+  }
+}
+
+const XAI_TIMEOUT_MS = 600_000;
+
+/** Turn a raw xAI failure into a specific cause. Never includes the key. */
+export function classifyXaiFailure(input: { key: string; error?: unknown; status?: number; body?: string; locale: "zh" | "en" }): string {
+  const zh = input.locale !== "en";
+  if (!input.key) return zh ? "没有 XAI_API_KEY。请在设置里保存密钥，或在电脑上配置环境变量。" : "No XAI_API_KEY. Save one in Settings, or set it in the PC environment.";
+  const err = input.error instanceof Error ? input.error : null;
+  const cause = (err as { cause?: { code?: string } } | null)?.cause;
+  const blob = `${err?.name ?? ""} ${err?.message ?? ""} ${cause?.code ?? ""} ${input.body ?? ""}`;
+  if (input.status === 401 || input.status === 403 || /invalid.?api.?key|incorrect api key/i.test(blob)) {
+    return zh ? "XAI_API_KEY 无效或已被吊销（401/403）。请在设置里更换密钥。" : "XAI_API_KEY is invalid or revoked (401/403). Replace it in Settings.";
+  }
+  if (err?.name === "TimeoutError" || input.status === 408 || input.status === 504 || /timeout|timed out|ETIMEDOUT/i.test(blob)) {
+    return zh ? "连接 api.x.ai 超时。推理模型可能较慢；若反复超时，请检查这台电脑的网络。" : "Timed out reaching api.x.ai. Reasoning models can be slow; if this keeps happening, check this PC's network.";
+  }
+  if (/fetch failed|ENOTFOUND|ECONNRESET|ECONNREFUSED|EAI_AGAIN|EHOSTUNREACH|UND_ERR|network|getaddrinfo/i.test(blob)) {
+    return zh
+      ? "连不上 api.x.ai（网络错误，不是密钥写错）。这台电脑必须能访问 api.x.ai；国内网络经常访问不到。"
+      : "Cannot reach api.x.ai (network error, not a bad key). This PC must be able to reach api.x.ai.";
+  }
+  const detail = cap((input.body || err?.message || "request failed").replace(/\s+/g, " "), 180);
+  return input.status ? `xAI API ${input.status}: ${detail}` : `xAI API: ${detail}`;
+}
+
+/** Map one OpenAI-compatible stream delta (content, reasoning_content, tool_calls) to PocketPilot events. */
+export function xaiDeltaEvents(delta: { content?: string; reasoning_content?: string; tool_calls?: { index?: number; function?: { name?: string; arguments?: string } }[] } | undefined, open: Map<number, string>): StreamEvent[] {
+  if (!delta) return [];
+  const events: StreamEvent[] = [];
+  if (delta.reasoning_content) events.push({ type: "thinking", delta: delta.reasoning_content });
+  if (delta.content) events.push({ type: "text", delta: delta.content });
+  for (const call of delta.tool_calls ?? []) {
+    const index = call.index ?? 0;
+    const name = call.function?.name || open.get(index) || "tool";
+    if (!open.has(index)) {
+      open.set(index, name);
+      events.push({ type: "tool", phase: "start", name, detail: oneLine(call.function?.arguments ?? "", 120) });
+    }
+  }
+  return events;
 }
 let grokModels: { at: number; key: string; list: string[] } | null = null;
 
@@ -218,7 +345,7 @@ export const grokAgent: LocalAgent = {
       const hint = res.status === 400 || res.status === 401 || res.status === 403 ? (zh ? "密钥无效或已被吊销。" : "The key is invalid or revoked.") : `HTTP ${res.status}`;
       return { ok: false, message: zh ? `xAI 拒绝了请求：${hint}` : `xAI rejected the request: ${hint}` };
     } catch (error) {
-      return { ok: false, message: (zh ? "无法访问 api.x.ai：" : "Cannot reach api.x.ai: ") + (error instanceof Error ? error.message : String(error)).slice(0, 160) };
+      return { ok: false, message: classifyXaiFailure({ key, error, locale: ctx.locale }) };
     }
   },
 
@@ -232,49 +359,64 @@ export const grokAgent: LocalAgent = {
   },
   async *chat(req: AgentChatRequest, cli: string, ctx: AgentCtx, signal: AbortSignal): AsyncGenerator<StreamEvent> {
     const key = ctx.env.XAI_API_KEY ?? "";
+    const id = req.sessionId ?? `grok_${Date.now().toString(36)}`;
+    if (!req.sessionId) yield { type: "session", id };
     if (!key) {
-      // Grok Build CLI, plain output
+      grokRemember(ctx.dataDir, id, req.cwd, req.prompt, null);
       const args = ["--no-auto-update", "-p", req.prompt, "--cwd", req.cwd, "--output-format", "plain", "--always-approve"];
       if (req.model) args.push("-m", req.model);
       if (req.sessionId) args.push("-r", req.sessionId);
       let exit: { code: number | null; stderr: string } | null = null;
+      let answer = "";
       for await (const item of runStream(cli, args, { cwd: req.cwd, env: ctx.env, json: false, signal })) {
         if (item.kind === "exit") { exit = item; break; }
-        if (item.kind === "text") yield { type: "text", delta: item.text };
+        if (item.kind === "text") { answer += item.text; yield { type: "text", delta: item.text }; }
       }
-      if (exit && exit.code !== 0) { yield { type: "error", message: cap(exit.stderr.trim() || `grok exit ${exit.code}`, 500) }; return; }
+      if (signal.aborted) return;
+      if (exit && exit.code !== 0 && !answer) {
+        const message = cap(exit.stderr.trim() || `grok exit ${exit.code}`, 500);
+        grokRemember(ctx.dataDir, id, req.cwd, req.prompt, message);
+        yield { type: "error", message };
+        return;
+      }
+      grokRemember(ctx.dataDir, id, req.cwd, req.prompt, answer || "(no output)");
       yield { type: "done" };
       return;
     }
-    const list = grokRead(ctx.dataDir);
-    const id = req.sessionId ?? `grok_${Date.now().toString(36)}`;
-    const existing = list.find((c) => c.id === id);
-    if (!req.sessionId) yield { type: "session", id };
-    const history = (existing?.messages ?? []).slice(-30).map((m) => ({ role: m.role, content: m.text }));
+    const history = grokRead(ctx.dataDir).find((c) => c.id === id)?.messages.slice(-30).map((m) => ({ role: m.role, content: m.text })) ?? [];
+    grokRemember(ctx.dataDir, id, req.cwd, req.prompt, null);
     const model = req.model || "grok-4";
+    const timeout = AbortSignal.timeout(XAI_TIMEOUT_MS);
+    const linked = AbortSignal.any([signal, timeout]);
     let res: Response;
     try {
       res = await fetch(`${XAI}/chat/completions`, {
         method: "POST",
         headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
         body: JSON.stringify({ model, stream: true, stream_options: { include_usage: true }, messages: [{ role: "system", content: `You are Grok replying inside PocketPilot on a phone. The user's project folder is ${req.cwd}, but you cannot read or edit files; answer in text.` }, ...history, { role: "user", content: req.prompt }] }),
-        signal,
+        signal: linked,
       });
     } catch (e) {
-      yield { type: "error", message: cap(`xAI API: ${e instanceof Error ? e.message : String(e)}`, 400) };
+      if (signal.aborted) return;
+      const message = classifyXaiFailure({ key, error: timeout.aborted ? Object.assign(new Error("timeout"), { name: "TimeoutError" }) : e, locale: ctx.locale });
+      grokRemember(ctx.dataDir, id, req.cwd, req.prompt, message);
+      yield { type: "error", message };
       return;
     }
     if (!res.ok || !res.body) {
       const raw = await res.text().catch(() => "");
       let msg = raw;
-      try { const j = JSON.parse(raw) as { error?: string | { message?: string }; code?: string }; msg = typeof j.error === "string" ? j.error : j.error?.message ?? raw; } catch { /* raw */ }
-      const hint = res.status === 400 || res.status === 401 || res.status === 403 ? (ctx.locale === "en" ? " (check XAI_API_KEY)" : "（请检查 XAI_API_KEY）") : "";
-      yield { type: "error", message: cap(`xAI API ${res.status}: ${msg}${hint}`, 500) };
+      try { const j = JSON.parse(raw) as { error?: string | { message?: string } }; msg = typeof j.error === "string" ? j.error : j.error?.message ?? raw; } catch { /* raw */ }
+      const message = classifyXaiFailure({ key, status: res.status, body: msg, locale: ctx.locale });
+      grokRemember(ctx.dataDir, id, req.cwd, req.prompt, message);
+      yield { type: "error", message };
       return;
     }
     let answer = "";
+    let thinking = "";
     interface XUsage { prompt_tokens?: number; completion_tokens?: number; cost_in_usd_ticks?: number }
     let usage = null as XUsage | null;
+    const open = new Map<number, string>();
     const decoder = new TextDecoder();
     let buf = "";
     for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
@@ -286,18 +428,22 @@ export const grokAgent: LocalAgent = {
         const data = line.slice(5).trim();
         if (!data || data === "[DONE]") continue;
         const j = tryJson(data);
-        const delta = (j?.choices as { delta?: { content?: string } }[] | undefined)?.[0]?.delta?.content;
-        if (delta) { answer += delta; yield { type: "text", delta }; }
+        const choice = (j?.choices as { delta?: { content?: string; reasoning_content?: string; tool_calls?: { index?: number; function?: { name?: string; arguments?: string } }[] }; finish_reason?: string }[] | undefined)?.[0];
+        for (const event of xaiDeltaEvents(choice?.delta, open)) {
+          if (event.type === "text") answer += event.delta;
+          if (event.type === "thinking") thinking += event.delta;
+          yield event;
+        }
+        if (choice?.finish_reason && open.size) {
+          for (const name of open.values()) yield { type: "tool", phase: "done", name, detail: "" };
+          open.clear();
+        }
         if (j?.usage) usage = j.usage as XUsage;
       }
     }
-    const now = new Date().toISOString();
-    const chat = existing ?? { id, cwd: req.cwd, title: oneLine(req.prompt, 60), updatedAt: now, messages: [] };
-    chat.messages.push({ role: "user", text: req.prompt, at: now }, { role: "assistant", text: answer || "(no output)", at: now });
-    chat.updatedAt = now;
-    if (!existing) list.unshift(chat);
+    const stored = answer || (thinking ? `（思考）${oneLine(thinking, 500)}` : "(no output)");
+    grokRemember(ctx.dataDir, id, req.cwd, req.prompt, stored);
     try {
-      if (!exists(path.join(ctx.dataDir, "no-history"))) grokWrite(ctx.dataDir, list);
       if (usage) appendFileSync(path.join(ctx.dataDir, GROK_USAGE), JSON.stringify({ t: Date.now(), model, i: usage.prompt_tokens ?? 0, o: usage.completion_tokens ?? 0, c: typeof usage.cost_in_usd_ticks === "number" ? usage.cost_in_usd_ticks / 1e10 : null }) + "\n");
     } catch { /* best effort */ }
     yield { type: "done" };
