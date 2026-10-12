@@ -1,0 +1,2 @@
+Brand SVGs from @lobehub/icons-static-svg (MIT License).
+https://github.com/lobehub/lobe-icons

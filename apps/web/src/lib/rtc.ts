@@ -192,6 +192,13 @@ export function rtcConfigured(): boolean {
   return read() !== null;
 }
 
+/** LAN origin when the phone can reach the PC over HTTP. Null means the encrypted tunnel must carry the request. */
+export async function rtcLanOrigin(): Promise<string | null> {
+  if (!rtcConfigured()) return null;
+  if (state.phase !== "connected") await connectLink();
+  return state.via === "lan" && lanBase ? lanBase : null;
+}
+
 export function rtcHost(): string {
   return read()?.host ?? "";
 }

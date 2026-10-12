@@ -113,7 +113,8 @@ export const claudeAgent: LocalAgent = {
             : found
               ? { state: "unknown" as const, source: "cli", note: "未发现密钥；如已用 claude login 登录，发送时会直接可用" }
               : { state: "missing" as const, source: "none", note: "未找到 claude，也没有配置密钥" };
-    return { cliPath: found, version: version ? cap(version, 80) : null, hasHistory: files().length > 0, auth, dataPath: projectsRoot(), defaultModel: s.ANTHROPIC_MODEL || s.__model };
+    const canSdk = ctx.keySource !== "none" || Boolean(s.ANTHROPIC_API_KEY || s.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+    return { cliPath: found ?? (canSdk ? "claude-sdk" : null), version: version ? cap(version, 80) : canSdk && !found ? "Claude Agent SDK" : null, hasHistory: files().length > 0, auth, dataPath: projectsRoot(), defaultModel: s.ANTHROPIC_MODEL || s.__model };
   },
 
   async sessions(): Promise<AgentSession[]> {
@@ -177,6 +178,30 @@ export const claudeAgent: LocalAgent = {
   },
 
   async *chat(req: AgentChatRequest, cli: string, ctx: AgentCtx, signal: AbortSignal): AsyncGenerator<StreamEvent> {
+    const query = await loadClaudeQuery();
+    if (query) {
+      const state: SdkMapState = { sawPartial: false, sessionId: req.sessionId ?? "", openTool: "" };
+      let failed = false;
+      try {
+        for await (const message of query({ prompt: req.prompt, options: claudeQueryOptions({ cwd: req.cwd, model: req.model, sessionId: req.sessionId }, ctx.env) })) {
+          if (signal.aborted) return;
+          for (const event of mapClaudeSdkMessage(message, state)) {
+            if (event.type === "error") failed = true;
+            yield event;
+          }
+        }
+      } catch (error) {
+        if (signal.aborted) return;
+        yield { type: "error", message: explain(error instanceof Error ? error.message : String(error), ctx) };
+        return;
+      }
+      if (!failed) yield { type: "done" };
+      return;
+    }
+    if (cli === "claude-sdk") {
+      yield { type: "error", message: ctx.locale === "en" ? "Claude Agent SDK is not installed on this PC, and the claude CLI was not found." : "这台电脑没有安装 @anthropic-ai/claude-agent-sdk，也没有找到 claude 命令行。" };
+      return;
+    }
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"];
     if (req.sessionId) args.push("--resume", req.sessionId);
     if (req.model) args.push("--model", req.model);
@@ -273,6 +298,107 @@ export const claudeAgent: LocalAgent = {
     };
   },
 };
+
+type ClaudeQuery = (args: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<Record<string, unknown>>;
+
+let queryOverride: ClaudeQuery | null = null;
+
+/** Tests inject a fake `query()` so the suite never spawns the Claude binary. */
+export function setClaudeQueryForTests(fn: ClaudeQuery | null): void {
+  queryOverride = fn;
+}
+
+export interface SdkMapState {
+  sawPartial: boolean;
+  sessionId: string;
+  openTool: string;
+}
+
+/** Options for `@anthropic-ai/claude-agent-sdk` `query()`. The key stays in `env` (existing secret store), never in source. */
+export function claudeQueryOptions(req: { cwd: string; model?: string; sessionId?: string }, env: NodeJS.ProcessEnv): Record<string, unknown> {
+  return {
+    cwd: req.cwd,
+    ...(req.model ? { model: req.model } : {}),
+    includePartialMessages: true,
+    ...(req.sessionId ? { resume: req.sessionId } : {}),
+    permissionMode: "bypassPermissions",
+    allowDangerouslySkipPermissions: true,
+    persistSession: true,
+    env,
+  };
+}
+
+export function mapClaudeSdkMessage(message: Record<string, unknown>, state: SdkMapState): StreamEvent[] {
+  const events: StreamEvent[] = [];
+  const sid = typeof message.session_id === "string" ? message.session_id : "";
+  if (sid && sid !== state.sessionId) {
+    state.sessionId = sid;
+    events.push({ type: "session", id: sid });
+  }
+  if (message.type === "stream_event") {
+    const event = message.event as Record<string, unknown> | undefined;
+    if (!event) return events;
+    if (event.type === "content_block_start") {
+      const block = event.content_block as Record<string, unknown> | undefined;
+      if (block?.type === "tool_use") {
+        state.openTool = String(block.name ?? "tool");
+        const input = (block.input ?? {}) as Record<string, unknown>;
+        events.push({ type: "tool", phase: "start", name: state.openTool, detail: oneLine(String(input.file_path ?? input.command ?? input.description ?? ""), 120) });
+      }
+    } else if (event.type === "content_block_delta") {
+      const delta = event.delta as Record<string, unknown> | undefined;
+      if (delta?.type === "text_delta" && typeof delta.text === "string") {
+        state.sawPartial = true;
+        events.push({ type: "text", delta: delta.text });
+      } else if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
+        state.sawPartial = true;
+        events.push({ type: "thinking", delta: delta.thinking });
+      }
+    } else if (event.type === "content_block_stop" && state.openTool) {
+      events.push({ type: "tool", phase: "done", name: state.openTool, detail: "" });
+      state.openTool = "";
+    }
+    return events;
+  }
+  if (message.type === "assistant" && !state.sawPartial) {
+    const content = (message.message as { content?: unknown } | undefined)?.content;
+    for (const b of Array.isArray(content) ? (content as Record<string, unknown>[]) : []) {
+      if (b.type === "text" && typeof b.text === "string") events.push({ type: "text", delta: b.text });
+      else if (b.type === "thinking" && typeof b.thinking === "string") events.push({ type: "thinking", delta: b.thinking });
+      else if (b.type === "tool_use") {
+        const input = (b.input ?? {}) as Record<string, unknown>;
+        events.push({ type: "tool", phase: "start", name: String(b.name ?? "tool"), detail: oneLine(String(input.file_path ?? input.command ?? input.description ?? ""), 120) });
+      }
+    }
+    return events;
+  }
+  if (message.type === "result") {
+    const usage = message.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+    if (usage) events.push({ type: "usage", input: usage.input_tokens ?? 0, output: usage.output_tokens ?? 0 });
+    if (message.is_error === true || message.subtype === "error") {
+      events.push({ type: "error", message: cap(typeof message.result === "string" ? message.result : "Claude Agent SDK error", 600) });
+    } else if (!state.sawPartial && typeof message.result === "string" && message.result) {
+      events.push({ type: "text", delta: message.result });
+    }
+  }
+  return events;
+}
+
+let queryLoad: Promise<ClaudeQuery | null> | null = null;
+
+async function loadClaudeQuery(): Promise<ClaudeQuery | null> {
+  if (queryOverride) return queryOverride;
+  queryLoad ??= (async () => {
+    try {
+      const spec = "@anthropic-ai/claude-agent-sdk";
+      const mod = (await import(spec)) as { query?: ClaudeQuery };
+      return typeof mod.query === "function" ? mod.query : null;
+    } catch {
+      return null;
+    }
+  })();
+  return queryLoad;
+}
 
 function priceFor(model: string): { in: number; out: number } | null {
   const m = model.toLowerCase();

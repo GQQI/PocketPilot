@@ -43,7 +43,20 @@ export default defineConfig({
     port: 47231,
     strictPort: true,
     proxy: {
-      "/api": "http://127.0.0.1:47232",
+      "/api": {
+        target: "http://127.0.0.1:47232",
+        timeout: 0,
+        proxyTimeout: 0,
+        configure: (proxy) => {
+          proxy.on("proxyRes", (proxyRes, _req, res) => {
+            const type = String(proxyRes.headers["content-type"] ?? "");
+            if (type.includes("text/event-stream")) {
+              res.setHeader("Cache-Control", "no-cache, no-transform");
+              res.setHeader("X-Accel-Buffering", "no");
+            }
+          });
+        },
+      },
     },
   },
 });

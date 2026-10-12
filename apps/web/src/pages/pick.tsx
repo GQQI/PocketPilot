@@ -53,7 +53,7 @@ export function PlatformStep() {
           const st = agentState(a.available, a.hasHistory);
           return (
             <button key={a.id} type="button" className="set-row" data-testid={`pick-${a.id}`} onClick={() => { selectAgent(a.id); navigate(`/chat/in/${a.id}`); }}>
-              <Mark monogram={a.monogram} accent={a.accent} />
+              <Mark id={a.id} monogram={a.monogram} accent={a.accent} />
               <span className="min-w-0 flex-1 text-left">
                 <span className="set-title block">{a.name}</span>
                 <span className="block truncate text-xs text-mute"><span className={`dot dot-${st}`} /> {statusLabel(a.available, a.hasHistory, t, needsKey(a))}{a.canListSessions ? ` · ${t("s.pick.sessions", { n: a.sessionCount, p: a.projectCount })}` : ""}</span>
