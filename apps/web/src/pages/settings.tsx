@@ -123,7 +123,7 @@ function PlatformList() {
           const st = agentState(a.available, a.hasHistory);
           return (
             <Row key={a.id} testid={`plat-${a.id}`} mark={<Mark id={a.id} monogram={a.monogram} accent={a.accent} />} title={a.name}
-              value={`${statusLabel(a.available, a.hasHistory, t, needsKey(a))}${a.id === agent?.id ? " ·✓" : ""}`} to={`/settings/platforms/${a.id}`}
+              value={`${statusLabel(a.available, a.hasHistory, t, needsKey(a), a.auth)}${a.id === agent?.id ? " ·✓" : ""}`} to={`/settings/platforms/${a.id}`}
               right={<><span className={`dot dot-${st}`} aria-hidden="true" /><ChevronRight size={18} className="set-chev" /></>} />
           );
         })}
@@ -149,7 +149,7 @@ function PlatformMenu() {
         <Mark id={agent.id} monogram={agent.monogram} accent={agent.accent} />
         <div className="min-w-0 flex-1">
           <div className="font-semibold">{agent.name}</div>
-          <div className="truncate text-xs text-mute"><span className={`dot dot-${agentState(agent.available, agent.hasHistory)}`} /> {statusLabel(agent.available, agent.hasHistory, t, needsKey(agent))}{agent.version ? ` · ${agent.version}` : ""}</div>
+          <div className="truncate text-xs text-mute"><span className={`dot dot-${agentState(agent.available, agent.hasHistory)}`} /> {statusLabel(agent.available, agent.hasHistory, t, needsKey(agent), agent.auth)}{agent.version ? ` · ${agent.version}` : ""}</div>
         </div>
         <Button size="sm" variant="soft" onClick={() => selectAgent(agent.id)}>{t("s.pick.title")}</Button>
       </div>
@@ -223,32 +223,61 @@ function ConnectionSection({ agent }: { agent: AgentStatus }) {
       <section className="panel mt-4 p-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="!text-base font-semibold">{agent.name}</h2>
-          <span className={`pill ${agent.available ? "pill-ok" : "pill-warn"}`}>{statusLabel(agent.available, agent.hasHistory, t, needsKey(agent))}</span>
+          <span className={`pill ${agent.available ? "pill-ok" : "pill-warn"}`}>{statusLabel(agent.available, agent.hasHistory, t, needsKey(agent), agent.auth)}</span>
         </div>
         <dl className="kv mt-3">
           <dt>{t("set.cli")}</dt><dd className="break-all">{agent.cliPath ?? `${agent.cli}（未找到）`}</dd>
           <dt>{t("set.version")}</dt><dd>{agent.version ?? "—"}</dd>
           <dt>{t("set.auth")}</dt><dd><span className={`dot ${agent.auth.state === "ok" ? "dot-ok" : agent.auth.state === "missing" ? "dot-off" : "dot-run"}`} /> {authText}<div className="text-xs text-mute">{agent.auth.note}</div></dd>
         </dl>
-        {agent.auth.state !== "ok" && agent.cliPath ? <p className="mt-3 text-xs text-mute">{t(agent.id === "claude-code" ? "i.step2claude" : "i.step2", { login: LOGIN[agent.id] ?? agent.cli })}</p> : null}
+        {agent.auth.loginCommand && agent.auth.state !== "ok" ? (
+          <p className="mt-3 text-xs text-mute" data-testid="login-cmd">{t("set.loginCmd")} <code>{agent.auth.loginCommand}</code>{agent.id === "claude-code" ? "，然后输入 /login" : ""}</p>
+        ) : null}
         <Button className="mt-3" size="sm" variant="soft" onClick={() => void refreshAgents(true)}>{t("a.recheck")}</Button>
       </section>
-      {agent.envKeys.length > 0 ? (
-        <section className="panel mt-4 p-4">
-          <h2 className="!text-base font-semibold">{t("set.key")}</h2>
-          <p className="mt-1 text-xs text-mute">{agent.envKeys.join(" / ")} · {t("set.keyFrom")}: {agent.keySource}</p>
-          <p className="mt-2 text-sm font-medium" data-testid="key-state">{agent.keyLast4 ? t("set.keyMasked", { last4: agent.keyLast4 }) : agent.id === "claude-code" ? t("set.keyClaude") : t("set.keyNone")}</p>
-          {agent.id === "claude-code" ? <p className="mt-1 text-xs text-mute" data-testid="key-optional">{t("set.keyOptionalClaude")}</p> : null}
-          {result ? <p className="mt-1 text-sm" style={{ color: result.ok ? "#1a8f4c" : "#d1453b" }} data-testid="key-test">{result.message}</p> : null}
-          <Input className="mt-2" type="password" autoComplete="off" value={key} placeholder={t("set.keyPh")} onChange={(event) => setKey(event.target.value)} />
-          <div className="mt-3 flex gap-2">
-            <Button size="sm" variant="soft" disabled={!key.trim()} onClick={() => void save({ apiKey: key }).then(() => setKey(""))}>{t("set.keySave")}</Button>
-            <Button size="sm" variant="ghost" onClick={() => void save({ apiKey: "" })}>{t("set.keyClear")}</Button>
-            <Button size="sm" variant="soft" disabled={testing} data-testid="key-test-btn" onClick={() => void runTest()}>{testing ? t("set.testing") : t("set.test")}</Button>
-          </div>
-        </section>
-      ) : null}
+      {agent.envKeys.length > 0 ? <KeyBackup agent={agent} apiKey={key} setKey={setKey} save={save} testing={testing} result={result} runTest={runTest} /> : null}
     </div>
+  );
+}
+
+function KeyBackup({ agent, apiKey, setKey, save, testing, result, runTest }: {
+  agent: AgentStatus;
+  apiKey: string;
+  setKey: (value: string) => void;
+  save: (patch: { apiKey?: string }) => Promise<void>;
+  testing: boolean;
+  result: { ok: boolean; message: string } | null;
+  runTest: () => Promise<void>;
+}) {
+  const { t } = useApp();
+  const backup = Boolean(agent.auth.loginCommand);
+  const body = (
+    <>
+      <p className="mt-1 text-xs text-mute">{agent.envKeys.join(" / ")} · {t("set.keyFrom")}: {agent.keySource}</p>
+      <p className="mt-2 text-sm font-medium" data-testid="key-state">{agent.keyLast4 ? t("set.keyMasked", { last4: agent.keyLast4 }) : backup ? t("set.keyClaude") : t("set.keyNone")}</p>
+      <p className="mt-1 text-xs text-mute" data-testid="key-optional">{backup ? t("set.keyOptional") : t("set.keyOnly")}</p>
+      {result ? <p className="mt-1 text-sm" style={{ color: result.ok ? "#1a8f4c" : "#d1453b" }} data-testid="key-test">{result.message}</p> : null}
+      <Input className="mt-2" type="password" autoComplete="off" value={apiKey} placeholder={backup ? t("set.keyBackup") : t("set.keyPh")} onChange={(event) => setKey(event.target.value)} />
+      <div className="mt-3 flex gap-2">
+        <Button size="sm" variant="soft" disabled={!apiKey.trim()} onClick={() => void save({ apiKey }).then(() => setKey(""))}>{t("set.keySave")}</Button>
+        <Button size="sm" variant="ghost" onClick={() => void save({ apiKey: "" })}>{t("set.keyClear")}</Button>
+        <Button size="sm" variant="soft" disabled={testing} data-testid="key-test-btn" onClick={() => void runTest()}>{testing ? t("set.testing") : t("set.test")}</Button>
+      </div>
+    </>
+  );
+  if (!backup) {
+    return (
+      <section className="panel mt-4 p-4" data-testid="key-panel">
+        <h2 className="!text-base font-semibold">{t("set.key")}</h2>
+        {body}
+      </section>
+    );
+  }
+  return (
+    <details className="panel mt-4 p-4" data-testid="key-backup">
+      <summary className="cursor-pointer text-sm font-semibold">{t("set.keyBackup")}</summary>
+      {body}
+    </details>
   );
 }
 
@@ -355,7 +384,7 @@ function InstallGuide({ agent }: { agent: AgentStatus }) {
           </div>
         </>
       ) : null}
-      <p className="mt-3 text-sm">{t(agent.id === "claude-code" ? "i.step2claude" : "i.step2", { login: LOGIN[agent.id] ?? agent.cli })}</p>
+      <p className="mt-3 text-sm">{t(agent.auth.loginCommand ? (agent.id === "claude-code" ? "i.step2claude" : "i.step2") : "i.step2key", { login: agent.auth.loginCommand || LOGIN[agent.id] || agent.cli })}</p>
       <p className="mt-1 text-sm">{t("i.step3")}</p>
       {agent.id === "cursor" ? <p className="mt-3 text-xs text-mute">{t("i.ideNote")}</p> : null}
       <div className="mt-3"><a className="text-sm text-accent" href={agent.docsUrl} target="_blank" rel="noreferrer">{t("i.docs")}</a></div>

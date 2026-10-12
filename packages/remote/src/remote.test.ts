@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { RTCPeerConnection } from "node-datachannel/polyfill";
+import { applyChatEvent, assistantText, type ChatTurn } from "../../../apps/web/src/lib/chat-stream.ts";
+import { consumeSse } from "../../../apps/web/src/lib/sse.ts";
 import { b64uEncode, deriveSession, deriveSignaling, MemoryBus, newEcdh, open, randomBytes, RemoteClient, RemoteHost, seal, SecureChannel, type RtcCtor } from "./index";
 
 const RTC = RTCPeerConnection as unknown as RtcCtor;
@@ -113,4 +115,66 @@ test("QR pairing then link reconnect over WebRTC data channel", { timeout: 60_00
     bus.close();
   }
   void b64uEncode;
+});
+
+test("encrypted channel delivers chat text to UI state before the reply finishes", { timeout: 60_000, skip: process.platform === "win32" && (process.env.POCKETPILOT_FORCE_INPROC ?? process.env.MOBILEAGENT_FORCE_INPROC) !== "1" ? "in-process dual WebRTC peers unsupported on Windows" : false }, async () => {
+  const bus = new MemoryBus();
+  const sentAt: number[] = [];
+  const host = new RemoteHost({
+    bus,
+    RTC,
+    iceServers: [],
+    hostName: "test-host",
+    grant: () => ({ token: "tok_phone", deviceId: "dev1" }),
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      if (url.pathname !== "/api/agents/cursor/chat") return new Response("nope", { status: 404 });
+      const enc = new TextEncoder();
+      return new Response(new ReadableStream({
+        async start(controller) {
+          const send = async (body: unknown) => {
+            sentAt.push(Date.now());
+            controller.enqueue(enc.encode(`data: ${JSON.stringify(body)}\n\n`));
+            await new Promise((resolve) => setTimeout(resolve, 120));
+          };
+          await send({ type: "text", delta: "He" });
+          await send({ type: "text", delta: "llo" });
+          controller.close();
+        },
+      }), { headers: { "content-type": "text/event-stream", "cache-control": "no-cache, no-transform" } });
+    },
+  });
+  const mk = (target: ConstructorParameters<typeof RemoteClient>[0]) => new RemoteClient(target, { RTC, createBus: () => bus, iceServers: [], answerTimeoutMs: 8000, iceTimeoutMs: 15000 });
+  try {
+    const pairing = await host.createPairing(60_000);
+    const first = mk({ kind: "pair", sid: pairing.sid, secret: pairing.secret });
+    const welcome = await first.pair("phone");
+    first.close();
+    await host.syncLinks([{ id: "dev1", linkSecret: welcome.linkSecret }]);
+    const link = mk({ kind: "link", secret: welcome.linkSecret });
+    const response = await link.fetch("/api/agents/cursor/chat", { method: "POST", headers: { authorization: `Bearer ${welcome.token}` }, body: "{}" });
+    const reader = response.body?.getReader();
+    assert.ok(reader);
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let state: ChatTurn = { rows: [{ id: "a", role: "assistant", createdAt: "2026-01-01T00:00:00.000Z", blocks: [] }], status: "", sessionId: "", text: "", error: "" };
+    let firstTextAt = 0;
+    while (reader) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      buffer = consumeSse(buffer, (event) => {
+        state = applyChatEvent(state, event as Parameters<typeof applyChatEvent>[1]);
+        if (!firstTextAt && assistantText(state).includes("He")) firstTextAt = Date.now();
+      });
+      if (firstTextAt && sentAt.length < 2) break;
+    }
+    assert.ok(firstTextAt > 0, "first text never reached chat state");
+    assert.equal(assistantText(state).startsWith("He"), true);
+    assert.ok(sentAt.length < 2 || firstTextAt <= sentAt[1], "text showed up only after the channel finished");
+    link.close();
+  } finally {
+    host.close();
+    bus.close();
+  }
 });

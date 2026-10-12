@@ -397,6 +397,24 @@ handle("platforms:test", (id) => {
   if (!validPlatform(id)) throw new Error("bad input");
   return bridgeFetch("POST", `/api/desktop/agents/${id}/test`, {}, 45000);
 });
+const LOGIN_CMD = /^(cursor-agent|agent|claude|codex|gemini|opencode|grok|traecli|traex|trae-cli)( [a-z][a-z0-9-]*)*$/;
+function launchLogin(command) {
+  if (typeof command !== "string" || !LOGIN_CMD.test(command)) throw new Error("这条命令不能从这里启动");
+  let child;
+  if (process.platform === "win32") {
+    child = spawn("cmd.exe", ["/d", "/c", "start", "PocketPilot", "cmd.exe", "/k", command], { detached: true, stdio: "ignore" });
+  } else if (process.platform === "darwin") {
+    child = spawn("osascript", ["-e", `tell application "Terminal" to do script ${JSON.stringify(command)}`], { detached: true, stdio: "ignore" });
+  } else {
+    const term = ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"].find((name) => fs.existsSync(`/usr/bin/${name}`));
+    if (!term) throw new Error(`没有图形终端。请在电脑上自己运行：${command}`);
+    const args = term === "gnome-terminal" ? ["--", "bash", "-lc", command] : ["-e", command];
+    child = spawn(term, args, { detached: true, stdio: "ignore" });
+  }
+  child.unref();
+  return { ok: true, command };
+}
+handle("platforms:login", (command) => launchLogin(command));
 handle("platforms:import", async (id) => {
   if (!validPlatform(id)) throw new Error("bad input");
   const picked = await dialog.showOpenDialog(win, { properties: ["openFile"], filters: [{ name: "Text", extensions: ["txt", "env", "key", "*"] }] });

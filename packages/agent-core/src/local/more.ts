@@ -3,6 +3,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, StreamEvent } from "@pocketpilot/protocol";
 import { baseName, cap, exists, fileUriToPath, findExecutable, home, isDir, listDir, normPath, oneLine, readLines, runCapture, runStream, safeStat, startOfToday, tryJson } from "./util";
+import { childEnv, interpretCliLogin } from "./login";
 import { dailyTotals, emptyBucket, unsupportedUsage, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 /* =====================================================================================
@@ -161,8 +162,10 @@ export const traeAgent: LocalAgent = {
     const jwt = exists(path.join(home(), ".trae-cn", "trae-jwt-token")) || exists(path.join(home(), ".trae", "trae-jwt-token"));
     const zh = ctx.locale !== "en";
     const locked = traeHistoryNote({ readableSessions: readable, encryptedDb: encrypted, locale: ctx.locale });
+    const bin = found ? path.basename(found, path.extname(found)) : "traecli";
+    const loginCommand = `${bin} login`;
     const auth = found
-      ? { state: "unknown" as const, source: "cli", note: zh ? "登录状态由 traecli 自己保存；未登录时发送会提示运行 traecli login" : "Login is stored by traecli; run `traecli login` if sending fails" }
+      ? { state: "unknown" as const, source: "cli", loginCommand, note: zh ? `登录由 ${bin} 自己保存。未登录时请在电脑上运行 ${loginCommand}。PocketPilot 不注入密钥。` : `Login is stored by ${bin}. If you are not signed in, run ${loginCommand} on this PC.` }
       : ide
         ? { state: jwt ? ("ok" as const) : ("unknown" as const), source: "ide", note: locked || (zh ? `Trae CN 编辑器${jwt ? "已登录（只检查令牌文件是否存在，不读取内容）" : "（未发现登录令牌）"}。编辑器没有命令行或接口可从手机调用` : "Trae CN IDE found; it exposes no CLI/API to drive from the phone") }
         : { state: "missing" as const, source: "none", note: zh ? "未发现 Trae CN 或 TRAE CLI" : "Neither Trae CN nor TRAE CLI found" };
@@ -335,19 +338,51 @@ export interface XaiProbe { ok: boolean; models: string[]; status?: number; erro
  * A saved key counts as ready only after api.x.ai accepts it.
  * No key: the local grok CLI can still run. A failed probe is not "ready".
  */
-export function grokRuntime(input: { cliFound: boolean; hasKey: boolean; probe: XaiProbe | null; locale: "zh" | "en" }): { runnable: boolean; models: string[]; auth: { state: "ok" | "missing" | "unknown"; source: string; note: string } } {
+export function grokRuntime(input: { cliFound: boolean; cliLoggedIn?: boolean; hasKey: boolean; probe: XaiProbe | null; locale: "zh" | "en" }): { runnable: boolean; models: string[]; useKey: boolean; auth: { state: "ok" | "missing" | "unknown"; source: string; note: string; loginCommand?: string } } {
   const zh = input.locale !== "en";
+  const loginCommand = input.cliFound ? "grok login" : "";
+  if (input.cliFound && input.cliLoggedIn) {
+    return {
+      runnable: true,
+      models: [],
+      useKey: false,
+      auth: {
+        state: "ok",
+        source: "login",
+        loginCommand,
+        note: zh ? "已使用本机 grok 登录。保存的 XAI_API_KEY 不会传给进程，也不会改走 api.x.ai。" : "Using the local grok login. A saved XAI_API_KEY is not passed in and api.x.ai is not used.",
+      },
+    };
+  }
   if (input.hasKey) {
     if (input.probe?.ok) {
       const n = input.probe.models.length;
-      return { runnable: true, models: input.probe.models, auth: { state: "ok", source: "env", note: zh ? `已连通 api.x.ai，密钥有效${n ? `，${n} 个模型` : ""}。` : `Reached api.x.ai with a valid key${n ? `, ${n} models` : ""}.` } };
+      const why = input.cliFound
+        ? (zh ? "本机 grok 未登录，所以使用备用密钥。" : "The local grok CLI is not signed in, so the backup key is used.")
+        : (zh ? "这台电脑没有可登录的 grok 命令行。xAI 接口使用 XAI_API_KEY；安装官方 grok 并登录后会优先用登录态，并不再注入密钥。" : "This PC has no grok CLI to sign in to, so xAI uses XAI_API_KEY. If you install the official grok CLI and sign in, that login is used and the key is not injected.");
+      return { runnable: true, models: input.probe.models, useKey: true, auth: { state: "ok", source: "env", loginCommand, note: zh ? `已连通 api.x.ai，密钥有效${n ? `，${n} 个模型` : ""}。${why}` : `Reached api.x.ai with a valid key${n ? `, ${n} models` : ""}. ${why}` } };
     }
     const note = classifyXaiFailure({ key: "configured", error: input.probe?.error, status: input.probe?.status, locale: input.locale });
     const authFail = input.probe?.status === 401 || input.probe?.status === 403;
-    return { runnable: false, models: [], auth: { state: authFail ? "missing" : "unknown", source: "none", note: zh ? `${note} 因此不会标成可对话。` : `${note} Not marked ready.` } };
+    const extra = input.cliFound ? (zh ? ` 也可在电脑上运行 ${loginCommand}。` : ` Or run ${loginCommand} on this PC.`) : "";
+    return { runnable: false, models: [], useKey: false, auth: { state: authFail ? "missing" : "unknown", source: "none", loginCommand, note: zh ? `${note} 因此不会标成可对话。${extra}` : `${note} Not marked ready.${extra}` } };
   }
-  if (input.cliFound) return { runnable: true, models: [], auth: { state: "unknown", source: "cli", note: zh ? "未配置 XAI_API_KEY，将使用本机 grok 登录。API 模式只有连上 api.x.ai 且密钥有效才会标成可对话。" : "No XAI_API_KEY, so the local grok login is used. API mode is ready only when api.x.ai accepts a key." } };
-  return { runnable: false, models: [], auth: { state: "missing", source: "none", note: zh ? "没有 XAI_API_KEY，也没找到 grok 命令行。" : "No XAI_API_KEY and no grok CLI." } };
+  if (input.cliFound) {
+    return { runnable: false, models: [], useKey: false, auth: { state: "missing", source: "cli", loginCommand, note: zh ? `grok 未登录，也没有备用密钥。请在电脑上运行 ${loginCommand}。` : `grok is not signed in and no backup key is saved. Run ${loginCommand} on this PC.` } };
+  }
+  return { runnable: false, models: [], useKey: false, auth: { state: "missing", source: "none", loginCommand: "", note: zh ? "没有可登录的 grok 命令行，也没有 XAI_API_KEY。xAI 只能用密钥，或先安装官方 grok 再登录。" : "No grok CLI to sign in to, and no XAI_API_KEY. xAI needs a key, or install the official grok CLI and sign in." } };
+}
+
+let grokLoginMemo: { at: number; key: string; ok: boolean } | null = null;
+
+async function grokCliLoggedIn(cli: string, ctx: AgentCtx): Promise<boolean> {
+  if (grokLoginMemo && grokLoginMemo.key === cli && Date.now() - grokLoginMemo.at < 60_000) return grokLoginMemo.ok;
+  const env = childEnv(ctx.env, ["XAI_API_KEY"], false);
+  const r = await runCapture(cli, ["auth", "status"], { env, timeoutMs: 8000 }).catch(() => null);
+  const kind = r ? interpretCliLogin(`${r.stdout}\n${r.stderr}`, r.code ?? 1) : "unknown";
+  const ok = kind === "in";
+  grokLoginMemo = { at: Date.now(), key: cli, ok };
+  return ok;
 }
 
 let xaiProbeCache: { at: number; key: string; probe: XaiProbe } | null = null;
@@ -383,11 +418,12 @@ export const grokAgent: LocalAgent = {
       const r = await runCapture(found, ["--version"], { env: ctx.env, timeoutMs: 10000 });
       version = (r.stdout || r.stderr).split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? null;
     }
-    const key = ctx.env.XAI_API_KEY ?? "";
+    const cliLoggedIn = found ? await grokCliLoggedIn(found, ctx) : false;
+    const key = cliLoggedIn ? "" : (ctx.env.XAI_API_KEY ?? "");
     const probe = key ? await probeXai(key) : null;
-    const runtime = grokRuntime({ cliFound: Boolean(found), hasKey: Boolean(key), probe, locale: ctx.locale });
+    const runtime = grokRuntime({ cliFound: Boolean(found), cliLoggedIn, hasKey: Boolean(key), probe, locale: ctx.locale });
     return {
-      cliPath: runtime.runnable ? (key ? found ?? "xai-api" : found) : null,
+      cliPath: runtime.runnable ? (runtime.useKey ? found ?? "xai-api" : found) : (runtime.auth.state === "missing" ? found : null),
       version: runtime.runnable && key && !found ? "xAI API" : version ? cap(version, 80) : null,
       hasHistory: grokRead(ctx.dataDir).length > 0,
       auth: runtime.auth,
@@ -397,8 +433,9 @@ export const grokAgent: LocalAgent = {
   },
   async test(ctx, _cli): Promise<AgentTestResult> {
     const zh = ctx.locale !== "en";
+    if (grokLoginMemo?.ok) return { ok: true, message: zh ? "grok 命令行已登录。保存的密钥不会覆盖这次登录。" : "The grok CLI is signed in. A saved key is not applied over that login." };
     const key = ctx.env.XAI_API_KEY ?? "";
-    if (!key) return { ok: false, message: zh ? "未配置 XAI_API_KEY：请先填写并保存密钥。" : "No XAI_API_KEY saved yet." };
+    if (!key) return { ok: false, message: zh ? "grok 未登录，也没有备用密钥。请运行 grok login，或保存 XAI_API_KEY。" : "grok is not signed in and no backup key is saved. Run grok login, or save an XAI_API_KEY." };
     try {
       const res = await fetch(`${XAI}/models`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) });
       if (res.ok) {
@@ -431,9 +468,15 @@ export const grokAgent: LocalAgent = {
     })).filter((m) => m.blocks.length);
   },
   async *chat(req: AgentChatRequest, cli: string, ctx: AgentCtx, signal: AbortSignal): AsyncGenerator<StreamEvent> {
-    const key = ctx.env.XAI_API_KEY ?? "";
+    const cliLoggedIn = grokLoginMemo?.ok === true && cli !== "xai-api";
+    const env = childEnv(ctx.env, ["XAI_API_KEY"], !cliLoggedIn && ctx.keySource !== "none");
+    const key = cliLoggedIn ? "" : (env.XAI_API_KEY ?? "");
     const id = req.sessionId ?? `grok_${Date.now().toString(36)}`;
     if (!req.sessionId) yield { type: "session", id };
+    if (cli === "xai-api" && !key) {
+      yield { type: "error", message: ctx.locale === "en" ? "No grok CLI login and no XAI_API_KEY." : "没有 grok 登录，也没有 XAI_API_KEY。" };
+      return;
+    }
     if (!key) {
       grokRemember(ctx.dataDir, id, req.cwd, req.prompt, null);
       const args = ["--no-auto-update", "-p", req.prompt, "--cwd", req.cwd, "--output-format", "plain", "--always-approve"];
@@ -441,7 +484,7 @@ export const grokAgent: LocalAgent = {
       if (req.sessionId) args.push("-r", req.sessionId);
       let exit: { code: number | null; stderr: string } | null = null;
       let answer = "";
-      for await (const item of runStream(cli, args, { cwd: req.cwd, env: ctx.env, json: false, signal })) {
+      for await (const item of runStream(cli, args, { cwd: req.cwd, env, json: false, signal })) {
         if (item.kind === "exit") { exit = item; break; }
         if (item.kind === "text") { answer += item.text; yield { type: "text", delta: item.text }; }
       }

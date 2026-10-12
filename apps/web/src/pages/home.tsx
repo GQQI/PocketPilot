@@ -89,7 +89,7 @@ export function HomePage() {
             <Mark id={agent.id} monogram={agent.monogram} accent={agent.accent} />
             <div className="min-w-0 flex-1">
               <div className="font-semibold">{agent.name}</div>
-              <div className="hero-agent-sub"><span className={`dot dot-${state}`} />{statusLabel(agent.available, agent.hasHistory, t, needsKey(agent))}{agent.version ? ` · ${agent.version}` : ""}</div>
+              <div className="hero-agent-sub"><span className={`dot dot-${state}`} />{statusLabel(agent.available, agent.hasHistory, t, needsKey(agent), agent.auth)}{agent.version ? ` · ${agent.version}` : ""}</div>
             </div>
             <button type="button" className="hero-new" onClick={() => navigate(agent.available ? "/projects" : "/settings")}>
               {agent.available ? <><Plus size={16} />{t("a.newChat")}</> : t("set.title")}

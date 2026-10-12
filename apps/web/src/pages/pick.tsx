@@ -56,7 +56,7 @@ export function PlatformStep() {
               <Mark id={a.id} monogram={a.monogram} accent={a.accent} />
               <span className="min-w-0 flex-1 text-left">
                 <span className="set-title block">{a.name}</span>
-                <span className="block truncate text-xs text-mute"><span className={`dot dot-${st}`} /> {statusLabel(a.available, a.hasHistory, t, needsKey(a))}{a.canListSessions ? ` · ${t("s.pick.sessions", { n: a.sessionCount, p: a.projectCount })}` : ""}</span>
+                <span className="block truncate text-xs text-mute"><span className={`dot dot-${st}`} /> {statusLabel(a.available, a.hasHistory, t, needsKey(a), a.auth)}{a.canListSessions ? ` · ${t("s.pick.sessions", { n: a.sessionCount, p: a.projectCount })}` : ""}</span>
               </span>
               <ChevronRight size={18} className="set-chev" />
             </button>
