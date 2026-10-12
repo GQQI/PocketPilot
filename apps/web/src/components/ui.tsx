@@ -2,7 +2,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as Switch from "@radix-ui/react-switch";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
-import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
+import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
+import { registerBackCloser } from "@/lib/back";
 import { Inbox, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -85,6 +86,10 @@ export function Modal({
   title: string;
   children: ReactNode;
 }) {
+  useEffect(() => {
+    if (!open) return;
+    return registerBackCloser(() => onOpenChange(false));
+  }, [open, onOpenChange]);
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>

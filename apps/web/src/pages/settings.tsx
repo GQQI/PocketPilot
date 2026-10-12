@@ -122,7 +122,7 @@ function PlatformList() {
         {(overview?.agents ?? []).map((a) => {
           const st = agentState(a.available, a.hasHistory);
           return (
-            <Row key={a.id} testid={`plat-${a.id}`} mark={<Mark monogram={a.monogram} accent={a.accent} />} title={a.name}
+            <Row key={a.id} testid={`plat-${a.id}`} mark={<Mark id={a.id} monogram={a.monogram} accent={a.accent} />} title={a.name}
               value={`${statusLabel(a.available, a.hasHistory, t, needsKey(a))}${a.id === agent?.id ? " ·✓" : ""}`} to={`/settings/platforms/${a.id}`}
               right={<><span className={`dot dot-${st}`} aria-hidden="true" /><ChevronRight size={18} className="set-chev" /></>} />
           );
@@ -146,7 +146,7 @@ function PlatformMenu() {
   return (
     <SubPage title={agent.name} back="/settings/platforms" testid="platform-menu">
       <div className="plat-head">
-        <Mark monogram={agent.monogram} accent={agent.accent} />
+        <Mark id={agent.id} monogram={agent.monogram} accent={agent.accent} />
         <div className="min-w-0 flex-1">
           <div className="font-semibold">{agent.name}</div>
           <div className="truncate text-xs text-mute"><span className={`dot dot-${agentState(agent.available, agent.hasHistory)}`} /> {statusLabel(agent.available, agent.hasHistory, t, needsKey(agent))}{agent.version ? ` · ${agent.version}` : ""}</div>

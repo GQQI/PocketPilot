@@ -30,7 +30,7 @@ export function AgentPicker({ onPick, sticky = false }: { onPick?: (id: string) 
                 onPick?.(item.id);
               }}
             >
-              <Mark monogram={item.monogram} accent={item.accent} />
+              <Mark id={item.id} monogram={item.monogram} accent={item.accent} />
               <span className="agent-tab-text">
                 <span className="agent-tab-name">{item.name}</span>
                 <span className="agent-tab-state"><span className={`dot dot-${state}`} aria-hidden="true" />{t(`a.st.${state === "ready" ? "ready" : state === "history" ? "history" : "missing"}`)}</span>

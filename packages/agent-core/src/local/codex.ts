@@ -58,6 +58,12 @@ function titles(): Map<string, string> {
   return map;
 }
 
+/** Codex writes an internal scratch session named `chatcwd`. Hide that row, not a real chat that merely mentions the word. */
+export function isInternalCodexSession(id: string, title: string, cwd = ""): boolean {
+  const leaf = (value: string) => value.trim().replace(/[\\/]+$/, "").split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  return leaf(id) === "chatcwd" || title.trim().toLowerCase() === "chatcwd" || leaf(cwd) === "chatcwd";
+}
+
 function isInjected(text: string): boolean {
   const t = text.trimStart();
   return t.startsWith("<environment_context") || t.startsWith("<user_instructions") || t.startsWith("# AGENTS.md") || t.startsWith("<turn_aborted") || t.startsWith("<codex_") || t.startsWith("<permissions") || t.startsWith("<INSTRUCTIONS") || t.startsWith("<external_");
@@ -167,7 +173,7 @@ export const codexAgent: LocalAgent = {
       const oldest = g.entries[g.entries.length - 1];
       const f = await firstUser(oldest.file);
       const title = index.get(id) || f.title;
-      if (!title) continue;
+      if (!title || isInternalCodexSession(id, title, g.cwd)) continue;
       let messageCount = -1;
       if (counted++ < 40) {
         messageCount = 0;

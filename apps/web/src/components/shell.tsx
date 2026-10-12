@@ -1,8 +1,9 @@
 import { FolderTree, LayoutGrid, MessageCircle, ScanLine, Settings, Smartphone, X } from "lucide-react";
 import { Logo } from "@/components/logo";
-import { NavLink } from "react-router";
+import { NavLink, useNavigate } from "react-router";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
+import { bindRouter, installHardwareBack } from "@/lib/back";
 import type { TaskNote } from "@/lib/notify";
 import { Button, Input } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -20,6 +21,11 @@ const links: { to: string; key: string; icon: typeof LayoutGrid }[] = [
 export function Shell({ children }: { children: ReactNode }) {
   const { data, loading, error, notice, needsPair, retry, t, setNotice } = useApp();
   const scan = useScanPair();
+  const navigate = useNavigate();
+  useEffect(() => {
+    bindRouter((to) => navigate(to));
+    return installHardwareBack();
+  }, [navigate]);
   const gated = needsPair && !data;
   return (
     <div className="relative h-dvh">
@@ -109,7 +115,30 @@ function PairGate() {
   );
 }
 
-export function Mark({ monogram, accent }: { monogram: string; accent: string }) {
+/** Official brand marks from lobe-icons (MIT). `mask` icons are currentColor and follow the theme. */
+const BRAND: Record<string, { src: string; mask?: boolean }> = {
+  cursor: { src: "/icons/agents/cursor.svg" },
+  "claude-code": { src: "/icons/agents/claude.svg" },
+  codex: { src: "/icons/agents/codex.svg" },
+  opencode: { src: "/icons/agents/opencode.svg", mask: true },
+  gemini: { src: "/icons/agents/gemini.svg" },
+  "deepseek-harness": { src: "/icons/agents/deepseek.svg" },
+  "trae-cn": { src: "/icons/agents/trae.svg" },
+  grok: { src: "/icons/agents/grok.svg", mask: true },
+};
+
+export function Mark({ monogram, accent, id }: { monogram: string; accent: string; id?: string }) {
+  const brand = id ? BRAND[id] : undefined;
+  if (brand?.mask) {
+    return <span className="mark mark-logo mark-mask" style={{ ["--mark-icon" as string]: `url("${brand.src}")` }} role="img" aria-label={monogram} />;
+  }
+  if (brand) {
+    return (
+      <span className="mark mark-logo">
+        <img src={brand.src} alt="" />
+      </span>
+    );
+  }
   return (
     <span className="mark" style={{ background: accent }}>
       {monogram}
