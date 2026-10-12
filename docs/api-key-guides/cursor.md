@@ -2,9 +2,11 @@
 
 > 内容依据官方文档：https://cursor.com/docs/cli/reference/authentication（查证日期 2026-10-11）。官方页面会改版，按钮名称以你看到的官方界面为准。
 
-## 先确认：你需要 API Key 吗？
+## 先登录
 
-Cursor CLI（`cursor-agent`）有两种登录方式：**浏览器登录（官方推荐）**——运行 `cursor-agent login`；以及 **API Key**——适合没有浏览器、脚本或自动化场景。PocketPilot 会把你保存的密钥作为环境变量 `CURSOR_API_KEY` 传给 `cursor-agent`。如果你已经用 `cursor-agent login` 登录成功，可以不填密钥。
+在电脑上运行 `cursor-agent login`，用浏览器完成登录。PocketPilot 会看 `cursor-agent status`：已经登录就直接用这个登录态，**不会**把保存的 `CURSOR_API_KEY` 传给子进程。
+
+API Key 只是备用。只有 `cursor-agent status` 显示未登录、并且你在 PocketPilot 里保存了密钥时，才会把 `CURSOR_API_KEY` 交给命令行。不必为了用 Cursor 去填密钥。
 
 ## 获取步骤
 

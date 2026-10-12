@@ -1,12 +1,36 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 import { directoryParent } from "./browse";
-import { claudeAgent, claudeQueryOptions, claudeRuntime, mapClaudeSdkMessage, setClaudeQueryForTests, type SdkMapState } from "./local/claude";
+import { claudeAgent, claudeQueryOptions, claudeRuntime, mapClaudeSdkMessage, setClaudeLoggedInForTests, setClaudeQueryForTests, type SdkMapState } from "./local/claude";
 import { cursorHistoryFromLines, cursorPrintArgs, mapCursorStreamLine, type CursorStreamState } from "./local/cursor";
 import { grokRuntime, traeHistoryNote, traeSessionRoots } from "./local/more";
 import { isInternalCodexSession } from "./local/codex";
+import { childEnv, decideLogin, interpretCliLogin } from "./local/login";
 import { dedupeSessions } from "./local/dedupe";
 import { classifyXaiFailure, groupTraeRecords, xaiDeltaEvents } from "./local/more";
+
+test("login wins over a saved key and the three states stay distinct", () => {
+  const signed = decideLogin({ present: true, loggedIn: true, keySource: "file", loginCommand: "cursor-agent login", keyName: "CURSOR_API_KEY", locale: "zh", loginDetail: "a@b.c" });
+  assert.equal(signed.auth.state, "ok");
+  assert.equal(signed.auth.source, "login");
+  assert.equal(signed.useKey, false);
+  const backup = decideLogin({ present: true, loggedIn: false, keySource: "file", loginCommand: "codex login", keyName: "OPENAI_API_KEY", locale: "en" });
+  assert.equal(backup.auth.source, "file");
+  assert.equal(backup.useKey, true);
+  assert.match(backup.auth.note, /optional/i);
+  const neither = decideLogin({ present: true, loggedIn: false, keySource: "none", loginCommand: "codex login", keyName: "OPENAI_API_KEY", locale: "zh" });
+  assert.equal(neither.auth.state, "missing");
+  assert.equal(neither.useKey, false);
+  assert.match(neither.auth.note, /codex login/);
+  const stripped = childEnv({ CURSOR_API_KEY: "secret", PATH: "/bin" }, ["CURSOR_API_KEY"], false);
+  assert.equal(stripped.CURSOR_API_KEY, undefined);
+  assert.equal(stripped.PATH, "/bin");
+  assert.equal(childEnv({ CURSOR_API_KEY: "secret" }, ["CURSOR_API_KEY"], true).CURSOR_API_KEY, "secret");
+  assert.equal(interpretCliLogin("Logged in as a@b.c", 0), "in");
+  assert.equal(interpretCliLogin("Not logged in", 1), "out");
+  assert.equal(interpretCliLogin("unknown command: auth", 1), "unknown");
+});
 
 test("drive roots parent to the drive list", () => {
   assert.equal(directoryParent("C:\\"), "");
@@ -95,17 +119,24 @@ test("Claude is runnable from a local login and treats the API key as optional",
   assert.equal(local.runnable, true);
   assert.equal(local.auth.state, "ok");
   assert.equal(local.auth.source, "login");
-  assert.match(local.auth.note, /不需要 API Key/);
+  assert.match(local.auth.note, /不会传给子进程/);
+  assert.equal(local.useKey, false);
 
   const unsigned = claudeRuntime({ cliFound: true, sdkPresent: false, keySource: "none", loggedIn: false, locale: "en" });
   assert.equal(unsigned.runnable, true);
-  assert.equal(unsigned.auth.state, "unknown");
+  assert.equal(unsigned.auth.state, "missing");
+  assert.match(unsigned.auth.note, /\/login/);
   assert.match(unsigned.auth.note, /optional/i);
 
   const saved = claudeRuntime({ cliFound: true, sdkPresent: true, keySource: "file", loggedIn: false, locale: "en" });
   assert.equal(saved.auth.state, "ok");
   assert.equal(saved.auth.source, "file");
+  assert.equal(saved.useKey, true);
   assert.match(saved.auth.note, /optional/i);
+
+  const signedWithKey = claudeRuntime({ cliFound: true, sdkPresent: true, keySource: "file", loggedIn: true, locale: "zh" });
+  assert.equal(signedWithKey.auth.source, "login");
+  assert.equal(signedWithKey.useKey, false);
 });
 
 test("Claude query receives a key only when the user configured one", async () => {
@@ -115,6 +146,7 @@ test("Claude query receives a key only when the user configured one", async () =
     yield { type: "result", session_id: "s", result: "ok" };
   });
   const ctx = { cliPath: "claude", model: "", dataDir: "/tmp", locale: "zh" as const };
+  setClaudeLoggedInForTests(false);
   try {
     const withoutKey = [];
     for await (const event of claudeAgent.chat(
@@ -133,7 +165,17 @@ test("Claude query receives a key only when the user configured one", async () =
       new AbortController().signal,
     )) void event;
     assert.equal((seen?.env as NodeJS.ProcessEnv | undefined)?.ANTHROPIC_API_KEY, "from-store");
+
+    setClaudeLoggedInForTests(true);
+    for await (const event of claudeAgent.chat(
+      { prompt: "hi", cwd: "/tmp" },
+      "claude",
+      { ...ctx, env: { ANTHROPIC_API_KEY: "from-store" }, keySource: "file" },
+      new AbortController().signal,
+    )) void event;
+    assert.equal((seen?.env as NodeJS.ProcessEnv | undefined)?.ANTHROPIC_API_KEY, undefined);
   } finally {
+    setClaudeLoggedInForTests(null);
     setClaudeQueryForTests(null);
   }
 });
@@ -184,8 +226,16 @@ test("grok is ready only when api.x.ai accepts the key", () => {
   const up = grokRuntime({ cliFound: false, hasKey: true, probe: { ok: true, models: ["grok-4"] }, locale: "en" });
   assert.equal(up.runnable, true);
   assert.deepEqual(up.models, ["grok-4"]);
-  const cli = grokRuntime({ cliFound: true, hasKey: false, probe: null, locale: "zh" });
-  assert.equal(cli.runnable, true);
+  const cli = grokRuntime({ cliFound: true, cliLoggedIn: false, hasKey: false, probe: null, locale: "zh" });
+  assert.equal(cli.runnable, false);
+  assert.match(cli.auth.note, /grok login/);
+  const signed = grokRuntime({ cliFound: true, cliLoggedIn: true, hasKey: true, probe: { ok: true, models: ["grok-4"] }, locale: "zh" });
+  assert.equal(signed.runnable, true);
+  assert.equal(signed.useKey, false);
+  assert.equal(signed.auth.source, "login");
+  const apiOnly = grokRuntime({ cliFound: false, hasKey: true, probe: { ok: true, models: ["grok-4"] }, locale: "zh" });
+  assert.equal(apiOnly.useKey, true);
+  assert.match(apiOnly.auth.note, /没有可登录的 grok/);
 });
 
 test("trae encrypted database is explained and plaintext roots stay separate", () => {
@@ -193,7 +243,7 @@ test("trae encrypted database is explained and plaintext roots stay separate", (
   assert.equal(traeHistoryNote({ readableSessions: 1, encryptedDb: true, locale: "zh" }), "");
   assert.equal(traeHistoryNote({ readableSessions: 0, encryptedDb: false, locale: "en" }), "");
   const roots = traeSessionRoots({ TRAE_HOME: "/tmp/trae", TRAECLI_HOME: "/tmp/cli", LOCALAPPDATA: "/tmp/local" }, "/tmp/home");
-  assert.equal(roots.some((root) => root.endsWith("/tmp/cli/sessions")), true);
+  assert.equal(roots.includes(path.join("/tmp/cli", "sessions")), true);
   assert.equal(roots.some((root) => root.includes("database.db")), false);
 });
 

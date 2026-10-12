@@ -1,7 +1,7 @@
 "use strict";
 const { contextBridge, ipcRenderer } = require("electron");
 
-const INVOKE = new Set(["state:get", "service:toggle", "pairing:new", "clipboard:write", "device:revoke", "settings:set", "config:get", "config:set", "dialog:folder", "shell:open", "platforms:list", "platforms:save", "platforms:test", "platforms:import", "clipboard:read", "guide:get", "shell:url"]);
+const INVOKE = new Set(["state:get", "service:toggle", "pairing:new", "clipboard:write", "device:revoke", "settings:set", "config:get", "config:set", "dialog:folder", "shell:open", "platforms:list", "platforms:save", "platforms:test", "platforms:import", "platforms:login", "clipboard:read", "guide:get", "shell:url"]);
 const EVENTS = new Set(["state", "paired", "goto", "theme"]);
 
 contextBridge.exposeInMainWorld("pp", {

@@ -33,7 +33,7 @@ export function AgentPicker({ onPick, sticky = false }: { onPick?: (id: string) 
               <Mark id={item.id} monogram={item.monogram} accent={item.accent} />
               <span className="agent-tab-text">
                 <span className="agent-tab-name">{item.name}</span>
-                <span className="agent-tab-state"><span className={`dot dot-${state}`} aria-hidden="true" />{t(`a.st.${state === "ready" ? "ready" : state === "history" ? "history" : "missing"}`)}</span>
+                <span className="agent-tab-state"><span className={`dot dot-${state}`} aria-hidden="true" />{statusLabel(item.available, item.hasHistory, t, needsKey(item), item.auth)}</span>
               </span>
             </button>
           );
@@ -43,11 +43,17 @@ export function AgentPicker({ onPick, sticky = false }: { onPick?: (id: string) 
   );
 }
 
-export function statusLabel(available: boolean, hasHistory: boolean, t: (k: string) => string, needKey = false): string {
-  return available ? t("a.st.ready") : hasHistory ? t("a.st.history") : needKey ? t("a.st.needKey") : t("a.st.missing");
+export function statusLabel(available: boolean, hasHistory: boolean, t: (k: string) => string, needKey = false, auth?: { state?: string; loginCommand?: string }): string {
+  if (available) return t("a.st.ready");
+  if (auth?.loginCommand && auth.state !== "ok") return t("a.st.login");
+  if (hasHistory) return t("a.st.history");
+  if (needKey) return t("a.st.needKey");
+  return t("a.st.missing");
 }
 
-/** API-only platforms (no CLI to install): "missing" really means "no key yet". */
-export function needsKey(a: { id: string; available: boolean; keySource: string }): boolean {
-  return !a.available && a.id === "grok" && a.keySource === "none";
+/** Key-only platforms: "missing" means "no key yet". A CLI login command means the user should sign in on the PC. */
+export function needsKey(a: { id: string; available: boolean; keySource: string; cliPath?: string | null; envKeys?: string[]; auth?: { loginCommand?: string } }): boolean {
+  if (a.available || a.keySource !== "none" || a.auth?.loginCommand) return false;
+  if (a.id === "grok") return true;
+  return Boolean(a.cliPath) && (a.envKeys?.length ?? 0) > 0;
 }

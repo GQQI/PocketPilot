@@ -9,6 +9,10 @@ const config: CapacitorConfig = {
     // Lets the bundled UI also reach a plain-http LAN host (pairing by code over Wi-Fi).
     allowMixedContent: true,
   },
+  plugins: {
+    // The native HTTP plugin buffers the whole body, which would hide SSE deltas until the model finishes.
+    CapacitorHttp: { enabled: false },
+  },
 };
 
 export default config;

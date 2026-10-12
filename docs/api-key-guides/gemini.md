@@ -2,9 +2,11 @@
 
 > 内容依据官方文档：https://ai.google.dev/gemini-api/docs/api-key（查证日期 2026-10-11）。官方页面会改版，按钮名称以你看到的官方界面为准。
 
-## 先确认：你需要 API Key 吗？
+## 先登录
 
-Gemini CLI 可用 Google 账号登录，也可用 Gemini API Key。官方文档：客户端库会自动读取环境变量 `GEMINI_API_KEY` 或 `GOOGLE_API_KEY`（两者都设置时 `GOOGLE_API_KEY` 优先）。
+在电脑上运行 `gemini`，完成 Google 账号登录。PocketPilot 看到 `~/.gemini/oauth_creds.json` 就用这个登录，**不会**注入 `GEMINI_API_KEY` / `GOOGLE_API_KEY`。
+
+API Key 只是备用：没有这份登录文件、并且你保存了密钥时才会用它。官方文档里客户端库会读 `GEMINI_API_KEY` 或 `GOOGLE_API_KEY`（两者都在环境里时 `GOOGLE_API_KEY` 优先）；PocketPilot 在已登录时会把这两个变量从子进程环境里拿掉，避免盖掉登录。
 
 ## 获取步骤
 

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent, UsageBucket } from "@pocketpilot/protocol";
 import { baseName, cap, exists, prettyError, FileCache, findExecutable, globDirs, home, listDir, oneLine, readHead, readLines, runCapture, runStream, safeStat, startOfToday, tryJson } from "./util";
+import { childEnv, decideLogin } from "./login";
 import { dailyTotals, emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 /**
@@ -147,13 +148,18 @@ export const codexAgent: LocalAgent = {
       version = (r.stdout || r.stderr).split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? null;
     }
     const authFile = path.join(codexHome(), "auth.json");
-    const auth = ctx.keySource !== "none"
-      ? { state: "ok" as const, source: ctx.keySource, note: "OPENAI_API_KEY" }
-      : exists(authFile)
-        ? { state: "ok" as const, source: "login", note: "已用 Codex / ChatGPT 账号登录（~/.codex/auth.json）" }
-        : found
-          ? { state: "missing" as const, source: "none", note: "未登录：运行 codex login，或在设置里填写 OPENAI_API_KEY" }
-          : { state: "missing" as const, source: "none", note: "未找到 codex" };
+    const loggedIn = exists(authFile);
+    const decision = decideLogin({
+      present: Boolean(found),
+      loggedIn,
+      keySource: ctx.keySource,
+      loginCommand: "codex login",
+      keyName: "OPENAI_API_KEY",
+      locale: ctx.locale,
+      loginDetail: loggedIn ? "~/.codex/auth.json" : undefined,
+      absentNote: ctx.locale === "en" ? "codex was not found and no backup key is saved." : "未找到 codex，也没有备用密钥。",
+    });
+    const auth = decision.auth;
     return { cliPath: found, version: version ? cap(version, 80) : null, hasHistory: rollouts().length > 0, auth, dataPath: sessionsRoot(), defaultModel: configModel() };
   },
 
@@ -249,7 +255,9 @@ export const codexAgent: LocalAgent = {
     let any = false;
     let failed = "";
     let exit: { code: number | null; stderr: string } | null = null;
-    for await (const item of runStream(cli, args, { cwd: req.cwd, env: ctx.env, stdin: req.prompt, json: true, signal })) {
+    const loggedIn = exists(path.join(codexHome(), "auth.json"));
+    const env = childEnv(ctx.env, ["OPENAI_API_KEY"], !loggedIn && ctx.keySource !== "none");
+    for await (const item of runStream(cli, args, { cwd: req.cwd, env, stdin: req.prompt, json: true, signal })) {
       if (item.kind === "exit") { exit = item; break; }
       if (item.kind === "text") continue;
       const v = item.value;
