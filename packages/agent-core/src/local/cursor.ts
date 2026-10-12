@@ -291,6 +291,11 @@ export const cursorAgent: LocalAgent = {
         const content = (v.message as { content?: unknown })?.content;
         for (const b of Array.isArray(content) ? (content as Record<string, unknown>[]) : []) {
           if (b.type === "text" && typeof b.text === "string") { text += b.text; yield { type: "text", delta: b.text }; }
+          else if (b.type === "thinking" && typeof b.thinking === "string") yield { type: "thinking", delta: b.thinking };
+          else if (b.type === "tool_use") {
+            const input = (b.input ?? {}) as Record<string, unknown>;
+            yield { type: "tool", phase: "start", name: String(b.name ?? "tool"), detail: oneLine(String(input.file_path ?? input.command ?? input.description ?? ""), 120) };
+          }
         }
       } else if (v.type === "tool_call") {
         const tc = v.tool_call as Record<string, unknown> | undefined;

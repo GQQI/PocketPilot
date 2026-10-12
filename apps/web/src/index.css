@@ -179,6 +179,21 @@ button.row-card::after {
   background-image: linear-gradient(180deg, rgba(255,255,255,0.18), transparent);
   background-blend-mode: overlay;
 }
+.mark-logo {
+  background: var(--ma-soft);
+  background-image: none;
+  box-shadow: none;
+  color: var(--ma-fg);
+  overflow: hidden;
+}
+.mark-logo img { width: 68%; height: 68%; object-fit: contain; }
+.mark-mask {
+  background-color: var(--ma-fg);
+  -webkit-mask: var(--mark-icon) center / 68% 68% no-repeat;
+  mask: var(--mark-icon) center / 68% 68% no-repeat;
+}
+.hero-card .mark-logo { background: rgba(255, 255, 255, 0.16); }
+.hero-card .mark-mask { background-color: #fff; }
 
 /* bottom navigation */
 .dock {

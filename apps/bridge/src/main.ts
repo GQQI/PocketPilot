@@ -288,6 +288,8 @@ async function sseFrom(c: Context, source: AsyncIterable<unknown>) {
     if (error instanceof HubError) return c.json({ error: error.message, code: error.code }, error.status as 400);
     throw error;
   }
+  c.header("Cache-Control", "no-cache, no-transform");
+  c.header("X-Accel-Buffering", "no");
   return streamSSE(c, async (stream) => {
     // Comment-line heartbeat keeps proxies/NATs from closing idle streams; clients ignore it.
     const beat = setInterval(() => { void stream.write(": ping\n\n").catch(() => undefined); }, SSE_HEARTBEAT_MS);

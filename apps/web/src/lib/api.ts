@@ -2,7 +2,8 @@ import type { AgentChatRequest, AgentTestResult, AgentProject, AgentSession, Age
 
 import { Capacitor } from "@capacitor/core";
 import { migrateLegacyStorage } from "./legacy";
-import { forgetRtc, rtcConfigured, rtcFetch } from "./rtc";
+import { consumeSse } from "./sse";
+import { forgetRtc, rtcConfigured, rtcFetch, rtcLanOrigin } from "./rtc";
 
 migrateLegacyStorage();
 
@@ -124,12 +125,23 @@ function json(body: unknown): RequestInit {
 }
 
 async function stream(path: string, body: unknown, onEvent: (event: never) => void, signal: AbortSignal) {
-  const headers = new Headers(json(body).headers);
+  const headers: Record<string, string> = { "content-type": "application/json" };
   const extra = authHeaders();
-  for (const [key, value] of Object.entries(extra)) headers.set(key, value);
-  const response = await transport(path, { ...json(body), headers, signal });
-  if (!response.ok) throw await toError(response);
-  await readSse(response, (data) => onEvent(data as never));
+  for (const [key, value] of Object.entries(extra)) headers[key] = value;
+  const payload = JSON.stringify(body);
+  const emit = (data: unknown) => onEvent(data as never);
+  // Android WebView buffers fetch() until the response ends. XHR onprogress paints each SSE frame.
+  const lan = rtcConfigured() ? await rtcLanOrigin() : null;
+  if (rtcConfigured() && !lan) {
+    const response = await transport(path, { method: "POST", headers, body: payload, signal });
+    if (!response.ok) throw await toError(response);
+    await readSse(response, emit);
+    return;
+  }
+  if (Capacitor.isNativePlatform() && !rtcConfigured() && !readStore(BRIDGE_KEY)) {
+    throw new ApiError("pairing required", 401, "pair");
+  }
+  await xhrSse(lan ? `${lan}${path}` : resolve(path), payload, headers, emit, signal);
 }
 
 async function readSse(response: Response, onEvent: (data: unknown) => void) {
@@ -141,12 +153,46 @@ async function readSse(response: Response, onEvent: (data: unknown) => void) {
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() ?? "";
-    for (const part of parts) {
-      const line = part.split("\n").find((item) => item.startsWith("data:"));
-      if (!line) continue;
-      onEvent(JSON.parse(line.slice(5).trim()));
+    buffer = consumeSse(buffer, onEvent);
+  }
+  consumeSse(buffer, onEvent, true);
+}
+
+function xhrSse(url: string, body: string, headers: Record<string, string>, onEvent: (data: unknown) => void, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let cursor = 0;
+    let buffer = "";
+    const pump = (flush: boolean) => {
+      buffer += xhr.responseText.slice(cursor);
+      cursor = xhr.responseText.length;
+      buffer = consumeSse(buffer, onEvent, flush);
+    };
+    xhr.open("POST", url);
+    for (const [key, value] of Object.entries(headers)) xhr.setRequestHeader(key, value);
+    xhr.onprogress = () => pump(false);
+    xhr.onerror = () => reject(new ApiError("network", 0));
+    xhr.onabort = () => reject(new DOMException("aborted", "AbortError"));
+    xhr.onload = () => {
+      pump(true);
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(parseApiError(xhr.status, xhr.responseText));
+    };
+    const onAbort = () => xhr.abort();
+    if (signal.aborted) {
+      reject(new DOMException("aborted", "AbortError"));
+      return;
     }
+    signal.addEventListener("abort", onAbort, { once: true });
+    xhr.send(body);
+  });
+}
+
+function parseApiError(status: number, text: string): ApiError {
+  try {
+    const record = JSON.parse(text) as { error?: string; code?: string };
+    return new ApiError(record.error || "request failed", status, record.code);
+  } catch {
+    return new ApiError(text.slice(0, 200) || "request failed", status);
   }
 }
