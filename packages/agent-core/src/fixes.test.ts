@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { directoryParent } from "./browse";
 import { claudeAgent, claudeQueryOptions, claudeRuntime, mapClaudeSdkMessage, setClaudeQueryForTests, type SdkMapState } from "./local/claude";
+import { cursorHistoryFromLines, cursorPrintArgs, mapCursorStreamLine, type CursorStreamState } from "./local/cursor";
+import { grokRuntime, traeHistoryNote, traeSessionRoots } from "./local/more";
 import { isInternalCodexSession } from "./local/codex";
 import { dedupeSessions } from "./local/dedupe";
 import { classifyXaiFailure, groupTraeRecords, xaiDeltaEvents } from "./local/more";
@@ -134,6 +136,65 @@ test("Claude query receives a key only when the user configured one", async () =
   } finally {
     setClaudeQueryForTests(null);
   }
+});
+
+test("cursor-agent streams partial deltas and keeps tool input and output", () => {
+  const args = cursorPrintArgs({ prompt: "hi", model: "composer-2", sessionId: "chat-1" });
+  assert.equal(args.includes("--stream-partial-output"), true);
+  assert.equal(args.includes("--output-format"), true);
+  assert.equal(args.at(-1), "hi");
+  assert.equal(args.includes("composer-2"), true);
+  const state: CursorStreamState = { sessionId: "", sawPartial: false, sawText: false };
+  const first = mapCursorStreamLine({ type: "assistant", session_id: "s1", timestamp_ms: 1, message: { content: [{ type: "text", text: "He" }] } }, state);
+  const second = mapCursorStreamLine({ type: "assistant", session_id: "s1", timestamp_ms: 2, message: { content: [{ type: "text", text: "llo" }] } }, state);
+  const duplicate = mapCursorStreamLine({ type: "assistant", session_id: "s1", timestamp_ms: 3, model_call_id: "mc", message: { content: [{ type: "text", text: "Hello" }] } }, state);
+  const flush = mapCursorStreamLine({ type: "assistant", session_id: "s1", message: { content: [{ type: "text", text: "Hello" }] } }, state);
+  const tool = mapCursorStreamLine({ type: "tool_call", subtype: "completed", tool_call: { readToolCall: { args: { path: "a.ts" }, result: { success: { content: "body" } } } } }, state);
+  const again = mapCursorStreamLine({ type: "result", result: "Hello" }, state);
+  assert.equal(first.some((event) => event.type === "text" && event.delta === "He"), true);
+  assert.equal(second.some((event) => event.type === "text" && event.delta === "llo"), true);
+  assert.equal(duplicate.some((event) => event.type === "text"), false);
+  assert.equal(flush.some((event) => event.type === "text"), false);
+  assert.equal(tool.some((event) => event.type === "tool" && event.input?.includes("a.ts") && event.output?.includes("body")), true);
+  assert.equal(again.some((event) => event.type === "text"), false);
+});
+
+test("cursor transcripts keep thinking, tool input and tool output", () => {
+  const lines = [
+    JSON.stringify({ role: "assistant", message: { content: [{ type: "thinking", thinking: "plan the edit" }, { type: "text", text: "done" }, { type: "tool_use", id: "t1", name: "Read", input: { path: "a.ts" } }] } }),
+    JSON.stringify({ role: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "export const n = 1;" }] } }),
+  ];
+  const messages = cursorHistoryFromLines("s", lines, "2026-01-01T00:00:00.000Z");
+  const blocks = messages.flatMap((message) => message.blocks);
+  assert.equal(blocks.some((block) => block.type === "thinking" && block.text.includes("plan")), true);
+  assert.equal(blocks.some((block) => block.type === "text" && block.text === "done"), true);
+  const tool = blocks.find((block) => block.type === "tool");
+  assert.equal(tool?.type === "tool" && tool.input?.includes("a.ts"), true);
+  assert.equal(tool?.type === "tool" && tool.output?.includes("export const n"), true);
+});
+
+test("grok is ready only when api.x.ai accepts the key", () => {
+  const down = grokRuntime({ cliFound: true, hasKey: true, probe: { ok: false, models: [], error: Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } }) }, locale: "zh" });
+  assert.equal(down.runnable, false);
+  assert.match(down.auth.note, /api\.x\.ai/);
+  assert.equal(down.auth.note.includes("xai-secret"), false);
+  const bad = grokRuntime({ cliFound: false, hasKey: true, probe: { ok: false, models: [], status: 401 }, locale: "en" });
+  assert.equal(bad.runnable, false);
+  assert.equal(bad.auth.state, "missing");
+  const up = grokRuntime({ cliFound: false, hasKey: true, probe: { ok: true, models: ["grok-4"] }, locale: "en" });
+  assert.equal(up.runnable, true);
+  assert.deepEqual(up.models, ["grok-4"]);
+  const cli = grokRuntime({ cliFound: true, hasKey: false, probe: null, locale: "zh" });
+  assert.equal(cli.runnable, true);
+});
+
+test("trae encrypted database is explained and plaintext roots stay separate", () => {
+  assert.match(traeHistoryNote({ readableSessions: 0, encryptedDb: true, locale: "zh" }), /SQLCipher/);
+  assert.equal(traeHistoryNote({ readableSessions: 1, encryptedDb: true, locale: "zh" }), "");
+  assert.equal(traeHistoryNote({ readableSessions: 0, encryptedDb: false, locale: "en" }), "");
+  const roots = traeSessionRoots({ TRAE_HOME: "/tmp/trae", TRAECLI_HOME: "/tmp/cli", LOCALAPPDATA: "/tmp/local" }, "/tmp/home");
+  assert.equal(roots.some((root) => root.endsWith("/tmp/cli/sessions")), true);
+  assert.equal(roots.some((root) => root.includes("database.db")), false);
 });
 
 test("Claude SDK partial messages become text, thinking and tool events", () => {

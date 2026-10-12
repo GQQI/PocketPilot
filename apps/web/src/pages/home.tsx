@@ -150,7 +150,7 @@ export function HomePage() {
           </div>
           <div className="mt-2 space-y-2" data-testid="recent-sessions">
             {rows === null ? <p className="text-sm text-mute">{t("common.loading")}</p> : null}
-            {rows?.length === 0 ? <EmptyState text={agent.canListSessions ? t("a.recentEmpty") : t("set.noUsage")} /> : null}
+            {rows?.length === 0 ? <EmptyState text={agent.historyNote || (agent.canListSessions ? t("a.recentEmpty") : t("set.noUsage"))} /> : null}
             {rows?.map((session) => (
               <SessionRow key={session.id} session={session} onOpen={() => navigate(`/chat/${agent.id}/${session.id}`)} />
             ))}

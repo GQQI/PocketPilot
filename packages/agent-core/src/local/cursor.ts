@@ -237,74 +237,34 @@ export const cursorAgent: LocalAgent = {
   },
 
   async messages(sessionId, limit, ctx): Promise<ChatMessage[]> {
-    const ours = readOur(ctx.dataDir).find((c) => c.id === sessionId);
-    if (ours) {
-      return ours.messages.slice(-limit).map((m, i) => ({ id: `${sessionId}_${i}`, role: m.role, createdAt: m.at, blocks: [{ type: "text", text: m.text }] }));
-    }
     const t = listTranscripts().find((x) => x.id === sessionId);
-    if (!t) return [];
-    const at = new Date(safeStat(t.file)?.mtimeMs ?? Date.now()).toISOString();
-    const out: ChatMessage[] = [];
-    let current: ChatMessage | null = null;
-    let n = 0;
-    for await (const line of readLines(t.file)) {
-      if (!line.startsWith('{"role"')) continue;
-      const j = tryJson(line);
-      const content = (j?.message as { content?: unknown } | undefined)?.content;
-      if (j?.role === "user") {
-        current = null;
-        const text = userText(content);
-        if (text) out.push({ id: `${sessionId}_${n++}`, role: "user", createdAt: at, blocks: [{ type: "text", text: cap(text, 20000) }] });
-      } else if (j?.role === "assistant") {
-        if (!current) {
-          current = { id: `${sessionId}_${n++}`, role: "assistant", createdAt: at, blocks: [] };
-          out.push(current);
-        }
-        for (const b of Array.isArray(content) ? (content as Record<string, unknown>[]) : []) {
-          if (b.type === "text" && typeof b.text === "string" && b.text.trim()) current.blocks.push({ type: "text", text: cap(b.text, 20000) });
-          else if (b.type === "tool_use") current.blocks.push(toolBlock(b));
-        }
-      }
+    if (t) {
+      const at = new Date(safeStat(t.file)?.mtimeMs ?? Date.now()).toISOString();
+      const lines: string[] = [];
+      for await (const line of readLines(t.file)) lines.push(line);
+      return cursorHistoryFromLines(sessionId, lines, at).slice(-limit);
     }
-    return out.filter((m) => m.blocks.length).slice(-limit);
+    const ours = readOur(ctx.dataDir).find((c) => c.id === sessionId);
+    if (!ours) return [];
+    return ours.messages.slice(-limit).map((m, i) => ({ id: `${sessionId}_${i}`, role: m.role, createdAt: m.at, blocks: [{ type: "text" as const, text: m.text }] }));
   },
 
   async *chat(req: AgentChatRequest, cli: string, ctx: AgentCtx, signal: AbortSignal): AsyncGenerator<StreamEvent> {
-    const args = ["-p", "--output-format", "stream-json", "--force", "--trust"];
-    if (req.sessionId) args.push("--resume", req.sessionId);
-    if (req.model && req.model !== "auto") args.push("--model", req.model);
-    args.push(req.prompt);
+    const args = cursorPrintArgs(req);
     const env = { ...ctx.env };
     let text = "";
     let sessionId = req.sessionId ?? "";
     let failed = "";
     let exit: { code: number | null; stderr: string } | null = null;
+    const parsed: CursorStreamState = { sessionId, sawPartial: false, sawText: false };
     for await (const item of runStream(cli, args, { cwd: req.cwd, env, json: true, signal })) {
       if (item.kind === "exit") { exit = item; break; }
       if (item.kind === "text") { text += item.text; yield { type: "text", delta: item.text }; continue; }
-      const v = item.value;
-      if (typeof v.session_id === "string" && v.session_id && v.session_id !== sessionId) {
-        sessionId = v.session_id;
-        yield { type: "session", id: sessionId };
-      }
-      if (v.type === "assistant") {
-        const content = (v.message as { content?: unknown })?.content;
-        for (const b of Array.isArray(content) ? (content as Record<string, unknown>[]) : []) {
-          if (b.type === "text" && typeof b.text === "string") { text += b.text; yield { type: "text", delta: b.text }; }
-          else if (b.type === "thinking" && typeof b.thinking === "string") yield { type: "thinking", delta: b.thinking };
-          else if (b.type === "tool_use") {
-            const input = (b.input ?? {}) as Record<string, unknown>;
-            yield { type: "tool", phase: "start", name: String(b.name ?? "tool"), detail: oneLine(String(input.file_path ?? input.command ?? input.description ?? ""), 120) };
-          }
-        }
-      } else if (v.type === "tool_call") {
-        const tc = v.tool_call as Record<string, unknown> | undefined;
-        const name = tc ? Object.keys(tc)[0]?.replace(/ToolCall$/, "") ?? "tool" : "tool";
-        const detail = tc ? oneLine(JSON.stringify((tc[Object.keys(tc)[0]] as { args?: unknown })?.args ?? {}), 120) : "";
-        yield { type: "tool", phase: v.subtype === "completed" ? "done" : "start", name, detail };
-      } else if (v.type === "result") {
-        if (v.is_error === true || v.subtype === "error") failed = typeof v.result === "string" ? v.result : "Cursor 返回了错误";
-        else if (!text && typeof v.result === "string") { text = v.result; yield { type: "text", delta: v.result }; }
+      for (const event of mapCursorStreamLine(item.value, parsed)) {
+        if (event.type === "session") sessionId = event.id;
+        if (event.type === "text") text += event.delta;
+        if (event.type === "error") { failed = event.message; continue; }
+        yield event;
       }
     }
     if (failed || (exit && exit.code !== 0 && !text)) {
@@ -347,10 +307,180 @@ export const cursorAgent: LocalAgent = {
   },
 };
 
-function toolBlock(b: Record<string, unknown>): MessageBlock {
+/** Headless cursor-agent args. `--stream-partial-output` emits text deltas instead of one blob per turn. */
+export function cursorPrintArgs(req: { sessionId?: string; model?: string; prompt: string }): string[] {
+  const args = ["-p", "--output-format", "stream-json", "--stream-partial-output", "--force", "--trust"];
+  if (req.sessionId) args.push("--resume", req.sessionId);
+  if (req.model && req.model !== "auto") args.push("--model", req.model);
+  args.push(req.prompt);
+  return args;
+}
+
+export interface CursorStreamState {
+  sessionId: string;
+  sawPartial: boolean;
+  sawText: boolean;
+}
+
+/**
+ * cursor-agent `--stream-partial-output` emits three assistant shapes.
+ * Only `timestamp_ms` without `model_call_id` is new text; the other two repeat it.
+ * An assistant event with neither field is the older one-shot message.
+ */
+export function mapCursorStreamLine(value: Record<string, unknown>, state: CursorStreamState): StreamEvent[] {
+  const events: StreamEvent[] = [];
+  const sid = typeof value.session_id === "string" ? value.session_id : "";
+  if (sid && sid !== state.sessionId) {
+    state.sessionId = sid;
+    events.push({ type: "session", id: sid });
+  }
+  if (value.type === "assistant") {
+    const hasTs = typeof value.timestamp_ms === "number";
+    const hasCall = value.model_call_id != null && String(value.model_call_id) !== "";
+    if (hasTs && !hasCall) {
+      state.sawPartial = true;
+      const added = contentEvents(value);
+      if (added.some((event) => event.type === "text")) state.sawText = true;
+      return [...events, ...added];
+    }
+    if (state.sawPartial || hasCall) return events;
+    const added = contentEvents(value);
+    if (added.some((event) => event.type === "text")) state.sawText = true;
+    return [...events, ...added];
+  }
+  if (value.type === "tool_call") {
+    const tool = cursorToolCall(value.tool_call);
+    const phase = value.subtype === "completed" ? "done" as const : "start" as const;
+    events.push({
+      type: "tool",
+      phase,
+      name: tool.name,
+      detail: tool.detail,
+      ...(tool.input ? { input: tool.input } : {}),
+      ...(phase === "done" && tool.output ? { output: tool.output } : {}),
+    });
+    return events;
+  }
+  if (value.type === "result") {
+    if (value.is_error === true || value.subtype === "error") {
+      events.push({ type: "error", message: cap(typeof value.result === "string" ? value.result : "Cursor error", 600) });
+      return events;
+    }
+    if (!state.sawText && typeof value.result === "string" && value.result) {
+      state.sawText = true;
+      events.push({ type: "text", delta: value.result });
+    }
+  }
+  return events;
+}
+
+export function cursorToolCall(raw: unknown): { name: string; input: string; output: string; detail: string } {
+  const tc = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const key = Object.keys(tc)[0] ?? "tool";
+  const body = (tc[key] ?? {}) as { args?: unknown; result?: unknown };
+  const args = (body.args && typeof body.args === "object" ? body.args : {}) as Record<string, unknown>;
+  const input = jsonPreview(body.args);
+  const output = jsonPreview(body.result);
+  const summary = args.path ?? args.file_path ?? args.target_file ?? args.command ?? args.pattern ?? args.query ?? args.glob_pattern ?? "";
+  return { name: key.replace(/ToolCall$/, "") || "tool", input, output, detail: oneLine(String(summary || input), 160) };
+}
+
+/** IDE transcripts (`agent-transcripts/*.jsonl`) into the same blocks the live stream shows. */
+export function cursorHistoryFromLines(sessionId: string, lines: string[], at: string): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  const tools = new Map<string, MessageBlock & { type: "tool" }>();
+  let current: ChatMessage | null = null;
+  let n = 0;
+  for (const line of lines) {
+    if (!line.startsWith("{")) continue;
+    const j = tryJson(line);
+    if (!j) continue;
+    const content = (j.message as { content?: unknown } | undefined)?.content ?? j.content;
+    const role = j.role === "user" || j.role === "assistant" ? j.role : "";
+    if (!role) continue;
+    if (role === "user") {
+      const results = toolResults(content);
+      if (results.length) {
+        for (const result of results) {
+          const tool = result.id ? tools.get(result.id) : [...tools.values()].find((item) => item.status === "running");
+          if (!tool) continue;
+          tool.status = result.error ? "error" : "done";
+          if (result.output) tool.output = result.output;
+        }
+      }
+      const text = userText(content);
+      if (!text) continue;
+      current = null;
+      out.push({ id: `${sessionId}_${n++}`, role: "user", createdAt: at, blocks: [{ type: "text", text: cap(text, 20000) }] });
+      continue;
+    }
+    if (!current) {
+      current = { id: `${sessionId}_${n++}`, role: "assistant", createdAt: at, blocks: [] };
+      out.push(current);
+    }
+    for (const block of contentBlocks(content, tools)) current.blocks.push(block);
+  }
+  for (const tool of tools.values()) if (tool.status === "running") tool.status = "done";
+  return out.filter((message) => message.blocks.length);
+}
+
+function contentEvents(value: Record<string, unknown>): StreamEvent[] {
+  const content = (value.message as { content?: unknown } | undefined)?.content;
+  const events: StreamEvent[] = [];
+  for (const block of Array.isArray(content) ? content as Record<string, unknown>[] : []) {
+    if (block.type === "text" && typeof block.text === "string" && block.text) events.push({ type: "text", delta: block.text });
+    else if ((block.type === "thinking" || block.type === "reasoning") && typeof (block.thinking ?? block.text) === "string") {
+      const text = String(block.thinking ?? block.text);
+      if (text) events.push({ type: "thinking", delta: text });
+    } else if (block.type === "tool_use") {
+      const tool = cursorToolCall({ [`${String(block.name ?? "tool")}ToolCall`]: { args: block.input } });
+      events.push({ type: "tool", phase: "start", name: String(block.name ?? tool.name), detail: tool.detail, ...(tool.input ? { input: tool.input } : {}) });
+    }
+  }
+  return events;
+}
+
+function contentBlocks(content: unknown, tools: Map<string, MessageBlock & { type: "tool" }>): MessageBlock[] {
+  const blocks: MessageBlock[] = [];
+  for (const block of Array.isArray(content) ? content as Record<string, unknown>[] : []) {
+    if (block.type === "text" && typeof block.text === "string" && block.text.trim()) blocks.push({ type: "text", text: cap(block.text, 20000) });
+    else if ((block.type === "thinking" || block.type === "reasoning") && String(block.thinking ?? block.text ?? "").trim()) {
+      blocks.push({ type: "thinking", text: cap(String(block.thinking ?? block.text), 20000) });
+    } else if (block.type === "tool_use") {
+      const tool = toolBlock(block);
+      if (typeof block.id === "string" && block.id) tools.set(block.id, tool);
+      blocks.push(tool);
+    }
+  }
+  return blocks;
+}
+
+function toolResults(content: unknown): { id: string; output: string; error: boolean }[] {
+  const out: { id: string; output: string; error: boolean }[] = [];
+  for (const block of Array.isArray(content) ? content as Record<string, unknown>[] : []) {
+    if (block.type !== "tool_result") continue;
+    out.push({ id: String(block.tool_use_id ?? ""), output: cap(textOf(block.content ?? block.output ?? block.text), 20000), error: block.is_error === true });
+  }
+  return out;
+}
+
+function textOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((part) => (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string" ? String((part as { text: string }).text) : "")).join("\n");
+}
+
+function jsonPreview(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return cap(value, 20000);
+  try { return cap(JSON.stringify(value, null, 2), 20000); } catch { return ""; }
+}
+
+function toolBlock(b: Record<string, unknown>): MessageBlock & { type: "tool" } {
   const input = (b.input ?? {}) as Record<string, unknown>;
   const detail = String(input.path ?? input.target_file ?? input.command ?? input.pattern ?? input.query ?? input.glob_pattern ?? input.description ?? "");
-  return { type: "tool", name: String(b.name ?? "tool"), detail: oneLine(detail || JSON.stringify(input), 140), status: "done" };
+  const preview = jsonPreview(b.input);
+  return { type: "tool", name: String(b.name ?? "tool"), detail: oneLine(detail || preview, 160), status: "running", ...(preview ? { input: preview } : {}) };
 }
 
 function recordOur(dataDir: string, id: string, req: AgentChatRequest, answer: string): void {

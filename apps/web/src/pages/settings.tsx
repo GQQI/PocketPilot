@@ -96,16 +96,16 @@ function SettingsHome() {
     <div className="subpage app-scroll h-full overflow-y-auto px-4 pb-10 md:px-8" data-testid="settings">
       <h1 className="display !p-0 text-3xl">{t("s.title")}</h1>
       <Group>
-        <Row testid="row-platforms" icon={Bot} tint="#2f6fed" title={t("s.agents")} value={overview ? t("s.agentsSum", { n: overview.detected, name: agent?.name ?? "—" }) : ""} to="/settings/platforms" />
+        <Row testid="row-platforms" icon={Bot} title={t("s.agents")} value={overview ? t("s.agentsSum", { n: overview.detected, name: agent?.name ?? "—" }) : ""} to="/settings/platforms" />
       </Group>
       <Group>
-        <Row testid="row-notify" icon={Bell} tint="#e5484d" title={t("s.notify")} value={prefs.enabled ? t("s.on") : t("s.off")} to="/settings/notifications" />
-        <Row icon={ShieldCheck} tint="#1fa971" title={t("s.security")} to="/settings/security" />
-        <Row icon={Lock} tint="#7a5af8" title={t("s.privacy")} to="/settings/privacy" />
-        <Row icon={Palette} tint="#f59f00" title={t("s.appearance")} value={`${data?.settings.theme === "dark" ? t("set.dark") : t("set.light")} · ${locale === "zh" ? "中文" : "English"}`} to="/settings/appearance" />
+        <Row testid="row-notify" icon={Bell} title={t("s.notify")} value={prefs.enabled ? t("s.on") : t("s.off")} to="/settings/notifications" />
+        <Row icon={ShieldCheck} title={t("s.security")} to="/settings/security" />
+        <Row icon={Lock} title={t("s.privacy")} to="/settings/privacy" />
+        <Row icon={Palette} title={t("s.appearance")} value={`${data?.settings.theme === "dark" ? t("set.dark") : t("set.light")} · ${locale === "zh" ? "中文" : "English"}`} to="/settings/appearance" />
       </Group>
       <Group>
-        <Row icon={Info} tint="#64748b" title={t("s.about")} value={APP_VERSION} to="/settings/about" />
+        <Row icon={Info} title={t("s.about")} value={APP_VERSION} to="/settings/about" />
       </Group>
     </div>
   );
@@ -154,11 +154,11 @@ function PlatformMenu() {
         <Button size="sm" variant="soft" onClick={() => selectAgent(agent.id)}>{t("s.pick.title")}</Button>
       </div>
       <Group>
-        <Row testid="sec-conn" icon={KeyRound} tint="#2f6fed" title={t("s.pm.conn")} value={agent.auth.state === "ok" ? t("set.authOk") : agent.auth.state === "missing" ? t("set.authMissing") : t("set.authUnknown")} to={`${base}/connection`} />
-        <Row testid="sec-model" icon={Cpu} tint="#7a5af8" title={t("s.pm.model")} value={agent.defaultModel || "—"} to={`${base}/model`} />
-        <Row testid="sec-projects" icon={FolderOpen} tint="#f59f00" title={t("s.pm.projects")} value={agent.canListSessions ? t("s.pm.projSum", { n: agent.projectCount }) : "—"} to={`${base}/projects`} />
-        <Row testid="sec-usage" icon={BarChart3} tint="#1fa971" title={t("s.pm.usage")} to={`${base}/usage`} />
-        <Row testid="sec-adv" icon={Wrench} tint="#64748b" title={t("s.pm.adv")} to={`${base}/advanced`} />
+        <Row testid="sec-conn" icon={KeyRound} title={t("s.pm.conn")} value={agent.auth.state === "ok" ? t("set.authOk") : agent.auth.state === "missing" ? t("set.authMissing") : t("set.authUnknown")} to={`${base}/connection`} />
+        <Row testid="sec-model" icon={Cpu} title={t("s.pm.model")} value={agent.defaultModel || "—"} to={`${base}/model`} />
+        <Row testid="sec-projects" icon={FolderOpen} title={t("s.pm.projects")} value={agent.canListSessions ? t("s.pm.projSum", { n: agent.projectCount }) : "—"} to={`${base}/projects`} />
+        <Row testid="sec-usage" icon={BarChart3} title={t("s.pm.usage")} to={`${base}/usage`} />
+        <Row testid="sec-adv" icon={Wrench} title={t("s.pm.adv")} to={`${base}/advanced`} />
       </Group>
     </SubPage>
   );
@@ -405,7 +405,7 @@ function SecurityPage() {
       <DevicesPanel />
       <Group title={t("s.sec.access")} note={t("s.sec.accessHelp")}>
         {rtcConfigured() ? <Row title={t("set.connection")} value={t("set.linked", { host: rtcHost() })} /> : null}
-        <Row icon={Trash2} tint="#e5484d" title={t("s.sec.forget")} onClick={() => { api.forgetHost(); setNotice(t("set.forgot")); window.setTimeout(() => window.location.replace("/"), 600); }} />
+        <Row icon={Trash2} title={t("s.sec.forget")} onClick={() => { api.forgetHost(); setNotice(t("set.forgot")); window.setTimeout(() => window.location.replace("/"), 600); }} />
       </Group>
       <p className="set-note">{t("s.sec.forgetHelp")}</p>
     </SubPage>
@@ -428,8 +428,8 @@ function PrivacyPage() {
         <Row title={t("s.pri.keep")} right={<Switch on={info?.keepHistory ?? true} label={t("s.pri.keep")} onChange={(v) => void post({ keepHistory: v })} />} />
       </Group>
       <Group note={`${t("s.pri.clearPcHelp")} ${t("s.pri.clearPhoneHelp")}`}>
-        <Row icon={Trash2} tint="#e5484d" title={t("s.pri.clearPc")} onClick={() => { if (window.confirm(t("s.pri.confirm"))) void post({ clearHistory: true }).then(() => setNotice(t("s.pri.cleared"))); }} />
-        <Row icon={Trash2} tint="#f59f00" title={t("s.pri.clearPhone")} onClick={() => {
+        <Row icon={Trash2} title={t("s.pri.clearPc")} onClick={() => { if (window.confirm(t("s.pri.confirm"))) void post({ clearHistory: true }).then(() => setNotice(t("s.pri.cleared"))); }} />
+        <Row icon={Trash2} title={t("s.pri.clearPhone")} onClick={() => {
           if (!window.confirm(t("s.pri.confirm"))) return;
           for (const k of Object.keys(localStorage)) if (k.startsWith("pocketpilot.") && !/bridge|token|host|rtc|pair|sid|secret|device/i.test(k)) localStorage.removeItem(k);
           setNotice(t("s.pri.cleared"));
@@ -468,9 +468,9 @@ function AboutPage() {
         <Row title={t("s.about.update")} onClick={() => setNotice(t("s.about.updateHelp"))} />
       </Group>
       <Group>
-        <Row icon={FileText} tint="#2f6fed" title={t("s.about.terms")} to="/settings/about/terms" />
-        <Row icon={FileText} tint="#7a5af8" title={t("s.about.privacy")} to="/settings/about/privacy" />
-        <Row icon={FileText} tint="#64748b" title={t("s.about.licenses")} to="/settings/about/licenses" />
+        <Row icon={FileText} title={t("s.about.terms")} to="/settings/about/terms" />
+        <Row icon={FileText} title={t("s.about.privacy")} to="/settings/about/privacy" />
+        <Row icon={FileText} title={t("s.about.licenses")} to="/settings/about/licenses" />
       </Group>
     </SubPage>
   );
