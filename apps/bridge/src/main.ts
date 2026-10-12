@@ -134,6 +134,8 @@ async function sseFrom(c: Context, source: AsyncIterable<unknown>) {
     if (error instanceof HubError) return c.json({ error: error.message, code: error.code }, error.status as 400);
     throw error;
   }
+  c.header("Cache-Control", "no-cache, no-transform");
+  c.header("X-Accel-Buffering", "no");
   return streamSSE(c, async (stream) => {
     if (!first.done) await stream.writeSSE({ data: JSON.stringify(first.value) });
     while (true) {

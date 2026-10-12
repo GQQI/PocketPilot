@@ -22,6 +22,7 @@ import type {
   TerminalEvent,
 } from "@mobileagent/protocol";
 import { listDemoDirectory, listHostDirectory } from "./browse";
+import { loadTraeSessions, presentHistory } from "./history";
 import { CATALOG, type CatalogEntry } from "./catalog";
 import { DemoEngine } from "./demo-engine";
 import { HubError } from "./errors";
@@ -114,13 +115,15 @@ export class Hub {
 
   bootstrap(): Bootstrap {
     const projects = this.settings.demoMode ? this.demo.projects() : this.live.projects();
-    const sessions = this.settings.demoMode ? this.demo.sessions() : this.live.sessions();
+    const own = this.settings.demoMode ? this.demo.sessions() : this.live.sessions();
+    const external = this.settings.demoMode ? [] : loadTraeSessions();
+    const sessions = presentHistory([...own, ...external, ...extras.flatMap((adapter) => adapter.listSessions())]);
     const queue = this.settings.demoMode ? this.demo.queue() : this.live.queue();
     return {
       settings: this.settings,
       providers: this.providerViews(),
       projects: [...projects, ...extras.flatMap((adapter) => adapter.listProjects())],
-      sessions: [...sessions, ...extras.flatMap((adapter) => adapter.listSessions())],
+      sessions,
       queue,
     };
   }

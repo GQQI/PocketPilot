@@ -29,8 +29,17 @@ export function blocksFromEvents(events: StreamEvent[]): { blocks: MessageBlock[
   for (const event of events) {
     if (event.type === "thinking") thinking += event.delta;
     if (event.type === "text") text += event.delta;
+    if (event.type === "tool" && event.phase === "start") {
+      tools.push({ type: "tool", name: event.name, detail: event.detail, status: "running" });
+    }
     if (event.type === "tool" && event.phase === "done") {
-      tools.push({ type: "tool", name: event.name, detail: event.detail, status: "done" });
+      const index = tools.findLastIndex((block) => block.type === "tool" && block.name === event.name && block.status === "running");
+      if (index >= 0) {
+        const current = tools[index];
+        if (current?.type === "tool") tools[index] = { ...current, detail: event.detail || current.detail, status: "done" };
+      } else {
+        tools.push({ type: "tool", name: event.name, detail: event.detail, status: "done" });
+      }
     }
     if (event.type === "usage") tokens = { input: event.input, output: event.output };
   }
@@ -77,6 +86,20 @@ function voiceFor(providerId: string, focus: string): { thinking: string; tool: 
         tool: "shell",
         toolDetail: "dsh --profile headless",
         reply: `DeepSeek Harness 用 headless 档案跑完「${focus}」。模型以 dsh 配置档为准。能拆成插件的部分留在工具边界上，不塞进核心循环。`,
+      };
+    case "grok":
+      return {
+        thinking: "先把问题收成一句，再给可以直接执行的下一步。",
+        tool: "web_search",
+        toolDetail: "api.x.ai",
+        reply: `Grok 看过「${focus}」。密钥留在电脑上，回复按流式片段回到手机。`,
+      };
+    case "trae-cn":
+      return {
+        thinking: "按一次对话归并，不把每一条消息拆成历史行。",
+        tool: "read_file",
+        toolDetail: "README.md",
+        reply: `Trae CN 把「${focus}」收成这一次会话。历史里只保留对话，不按单条消息铺开。`,
       };
     default:
       return {

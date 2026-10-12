@@ -1,8 +1,9 @@
 import { FolderTree, LayoutGrid, ListOrdered, MessageCircle, Settings } from "lucide-react";
-import { NavLink } from "react-router";
+import { NavLink, useLocation, useNavigate } from "react-router";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Input } from "@/components/ui";
+import { exitApp, installHardwareBack, runBackNavigation } from "@/lib/back";
 import { useApp } from "@/lib/store";
 import type { CopyKey } from "@/lib/i18n";
 
@@ -14,8 +15,26 @@ const links: { to: string; key: CopyKey; icon: typeof LayoutGrid }[] = [
   { to: "/settings", key: "nav.settings", icon: Settings },
 ];
 
+const AGENT_ICONS: Record<string, string> = {
+  cursor: "/icons/agents/cursor.svg",
+  "claude-code": "/icons/agents/claude.svg",
+  codex: "/icons/agents/codex.svg",
+  opencode: "/icons/agents/opencode.svg",
+  gemini: "/icons/agents/gemini.svg",
+  "deepseek-harness": "/icons/agents/deepseek.svg",
+  grok: "/icons/agents/grok.svg",
+  "trae-cn": "/icons/agents/trae.svg",
+};
+
 export function Shell({ children }: { children: ReactNode }) {
   const { data, loading, error, notice, needsPair, refresh, t, locale } = useApp();
+  const navigate = useNavigate();
+  const location = useLocation();
+  useEffect(() => {
+    return installHardwareBack(() => {
+      runBackNavigation(location.pathname, () => navigate("/"), exitApp);
+    });
+  }, [location.pathname, navigate]);
   return (
     <div className="relative h-dvh">
       <div className="mx-auto flex h-full w-full max-w-[1240px] flex-col md:flex-row">
@@ -81,7 +100,15 @@ function PairGate() {
   );
 }
 
-export function Mark({ monogram, accent }: { monogram: string; accent: string }) {
+export function Mark({ id, monogram, accent }: { id?: string; monogram: string; accent: string }) {
+  const src = id ? AGENT_ICONS[id] : undefined;
+  if (src) {
+    return (
+      <span className="mark mark-logo">
+        <img src={src} alt="" width={24} height={24} />
+      </span>
+    );
+  }
   return (
     <span className="mark" style={{ background: accent }}>
       {monogram}

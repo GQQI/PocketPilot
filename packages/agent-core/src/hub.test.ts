@@ -13,7 +13,7 @@ test("demo hub covers CloudCLI agents plus DeepSeek Harness", async () => {
     const hub = createHub({ dataDir: dir, fast: true });
     const boot = hub.bootstrap();
     const ids = boot.providers.map((provider) => provider.meta.id);
-    assert.deepEqual(ids, ["cursor", "claude-code", "codex", "opencode", "gemini", "deepseek-harness"]);
+    assert.deepEqual(ids, ["cursor", "claude-code", "codex", "opencode", "gemini", "deepseek-harness", "grok", "trae-cn"]);
     assert.equal(ids.includes("vscode"), false);
     assert.equal(ids.includes("deepseek"), false);
     assert.equal(boot.settings.demoMode, true);

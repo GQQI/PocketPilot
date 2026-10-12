@@ -1,4 +1,4 @@
-import type { Bootstrap, ChatMessage, FileContent, FileEntry, FsListing, HostView, PairResult, SessionCreated, StreamEvent, TerminalEvent } from "@mobileagent/protocol";
+import { consumeSse, type Bootstrap, type ChatMessage, type FileContent, type FileEntry, type FsListing, type HostView, type PairResult, type SessionCreated, type StreamEvent, type TerminalEvent } from "@mobileagent/protocol";
 
 const BRIDGE_KEY = "mobileagent.bridge";
 const TOKEN_KEY = "mobileagent.token";
@@ -104,29 +104,63 @@ function json(body: unknown): RequestInit {
 }
 
 async function stream(path: string, body: unknown, onEvent: (event: never) => void, signal: AbortSignal) {
-  const headers = new Headers(json(body).headers);
-  const extra = authHeaders();
-  for (const [key, value] of Object.entries(extra)) headers.set(key, value);
-  const response = await fetch(resolve(path), { ...json(body), headers, signal });
-  if (!response.ok) throw await toError(response);
-  await readSse(response, (data) => onEvent(data as never));
+  await readSseXhr(resolve(path), body, (data) => onEvent(data as never), signal);
 }
 
-async function readSse(response: Response, onEvent: (data: unknown) => void) {
-  const reader = response.body?.getReader();
-  if (!reader) return;
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() ?? "";
-    for (const part of parts) {
-      const line = part.split("\n").find((item) => item.startsWith("data:"));
-      if (!line) continue;
-      onEvent(JSON.parse(line.slice(5).trim()));
-    }
-  }
+/**
+ * XMLHttpRequest onprogress delivers SSE chunks on Android WebView.
+ * fetch() there often buffers the body until the response ends, so the phone
+ * only saw the final message.
+ */
+function readSseXhr(url: string, body: unknown, onEvent: (data: unknown) => void, signal: AbortSignal): Promise<void> {
+  return new Promise((resolvePromise, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.setRequestHeader("content-type", "application/json");
+    const extra = authHeaders();
+    for (const [key, value] of Object.entries(extra)) xhr.setRequestHeader(key, value);
+    let seen = 0;
+    let rest = "";
+    let settled = false;
+    const pump = () => {
+      const chunk = xhr.responseText.slice(seen);
+      seen = xhr.responseText.length;
+      if (!chunk) return;
+      rest = consumeSse(rest + chunk, onEvent);
+    };
+    xhr.onprogress = pump;
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.LOADING || xhr.readyState === XMLHttpRequest.DONE) pump();
+    };
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      pump();
+      rest = consumeSse(`${rest}\n\n`, onEvent);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolvePromise();
+        return;
+      }
+      let record: { error?: string; code?: string } = {};
+      try {
+        record = JSON.parse(xhr.responseText) as { error?: string; code?: string };
+      } catch {
+        record = {};
+      }
+      reject(new ApiError(record.error || "request failed", xhr.status || 0, record.code));
+    };
+    xhr.onload = finish;
+    xhr.onerror = () => {
+      if (settled) return;
+      settled = true;
+      reject(new ApiError("request failed", xhr.status || 0));
+    };
+    xhr.onabort = () => {
+      if (settled) return;
+      settled = true;
+      reject(new DOMException("aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.send(JSON.stringify(body));
+  });
 }
