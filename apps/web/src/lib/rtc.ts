@@ -260,12 +260,12 @@ export function parsePairPayload(text: string): string | null {
   return match ? match[1] : null;
 }
 
-export async function pairFromPayload(payload: string, deviceName: string): Promise<string> {
+export async function pairFromPayload(payload: string, deviceName: string, deviceId?: string): Promise<string> {
   const [sid, secret] = payload.split(".");
   if (!sid || !secret) throw new RemoteError("expired", "二维码无效");
   const pairing = newClient({ kind: "pair", sid, secret });
   try {
-    const welcome = await pairing.pair(deviceName);
+    const welcome = await pairing.pair(deviceName, deviceId);
     forgetRtc();
     write({ secret: welcome.linkSecret, host: welcome.host, lan: welcome.urls ?? [] });
     return welcome.token;
