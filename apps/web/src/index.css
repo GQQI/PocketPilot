@@ -472,6 +472,22 @@ textarea.input { height: auto; min-height: 56px; padding: 12px 16px; line-height
 .send-btn:active:not(:disabled) { transform: scale(0.92); }
 .send-btn:disabled { opacity: 0.35; box-shadow: none; }
 .send-stop { background-image: none; background: var(--ma-fg); box-shadow: none; }
+.composer.has-mic textarea { padding-right: 98px; }
+.mic-btn {
+  position: absolute; right: 50px; bottom: 8px; width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center; color: var(--ma-accent);
+  background: color-mix(in srgb, var(--ma-accent) 10%, transparent);
+  transition: transform 150ms var(--ma-ease), background 150ms var(--ma-ease), color 150ms var(--ma-ease);
+}
+.mic-btn:active:not(:disabled) { transform: scale(0.92); }
+.mic-btn:disabled { opacity: 0.35; }
+.mic-btn.mic-on { color: var(--ma-on); background: var(--ma-danger); animation: mic-pulse 1.2s ease-in-out infinite; }
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ma-danger) 45%, transparent); }
+  50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--ma-danger) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { .mic-btn.mic-on { animation: none; } }
+.mic-note { margin: 0 0 6px; font-size: 12px; color: var(--ma-mute); }
 
 /* ---- multi-level navigation (settings + chat picker) ---- */
 .subpage { animation: sub-in 220ms var(--ma-ease, ease-out) both; }

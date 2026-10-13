@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowUp, Square } from "lucide-react";
+import { ArrowLeft, ArrowUp, Mic, Square } from "lucide-react";
 import type { StreamEvent } from "@pocketpilot/protocol";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
@@ -8,13 +8,14 @@ import { applyChatEvent, type ChatRow, type ChatTurn } from "@/lib/chat-stream";
 import { notifyTask } from "@/lib/notify";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/store";
+import { joinDictation, startVoice, voiceSupported, type VoiceSession } from "@/lib/voice";
 
 type UiMessage = ChatRow;
 
 export function ChatPage() {
   const { agent: agentId = "", sid = "new" } = useParams();
   const [params] = useSearchParams();
-  const { overview, t, setNotice } = useApp();
+  const { overview, t, setNotice, locale } = useApp();
   const navigate = useNavigate();
   const agent = overview?.agents.find((a) => a.id === agentId) ?? null;
   const isNew = sid === "new";
@@ -25,6 +26,33 @@ export function ChatPage() {
   const [limit, setLimit] = useState(80);
   const [loaded, setLoaded] = useState(isNew);
   const [draft, setDraft] = useState("");
+  const [micOk, setMicOk] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [micNote, setMicNote] = useState("");
+  const voice = useRef<VoiceSession | null>(null);
+  useEffect(() => {
+    let live = true;
+    void voiceSupported().then((ok) => { if (live) setMicOk(ok); });
+    return () => { live = false; void voice.current?.stop(); };
+  }, []);
+
+  async function toggleMic() {
+    if (voice.current) { await voice.current.stop(); return; }
+    const before = draft;
+    setMicNote("");
+    try {
+      setListening(true);
+      voice.current = await startVoice(locale, (spoken) => { setDraft(joinDictation(before, spoken)); requestAnimationFrame(autosize); }, (error) => {
+        voice.current = null;
+        setListening(false);
+        if (error && !/no match|cancel/i.test(error)) setMicNote(t("a.micFail"));
+      });
+    } catch (error) {
+      voice.current = null;
+      setListening(false);
+      setMicNote(error instanceof Error && error.message === "permission" ? t("a.micPerm") : t("a.micNone"));
+    }
+  }
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("");
   const abortRef = useRef<AbortController | null>(null);
@@ -176,7 +204,8 @@ export function ChatPage() {
             </select>
           </label>
         ) : null}
-        <div className="composer">
+        {micNote ? <p className="mic-note" role="status">{micNote}</p> : null}
+        <div className={`composer ${micOk ? "has-mic" : ""}`}>
           <textarea
             ref={area}
             rows={1}
@@ -189,6 +218,19 @@ export function ChatPage() {
               if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void send(); }
             }}
           />
+          {micOk ? (
+            <button
+              type="button"
+              className={`mic-btn ${listening ? "mic-on" : ""}`}
+              aria-label={listening ? t("a.micStop") : t("a.mic")}
+              aria-pressed={listening}
+              data-testid="mic"
+              disabled={!canSend || running}
+              onClick={() => void toggleMic()}
+            >
+              <Mic size={18} strokeWidth={2.2} />
+            </button>
+          ) : null}
           {running ? (
             <button type="button" className="send-btn send-stop" aria-label={t("a.stop")} data-testid="stop" onClick={() => abortRef.current?.abort()}><Square size={14} fill="currentColor" /></button>
           ) : (

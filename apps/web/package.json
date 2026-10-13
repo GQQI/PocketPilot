@@ -7,12 +7,13 @@
     "dev": "vite --host 0.0.0.0 --port 47231 --strictPort",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
-    "test": "tsx --test src/lib/back.test.ts src/lib/sse.test.ts",
+    "test": "tsx --test src/lib/back.test.ts src/lib/sse.test.ts src/lib/voice.test.ts",
     "lint": "oxlint",
     "preview": "vite preview --host 0.0.0.0 --port 47231 --strictPort"
   },
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^6.0.1",
+    "@capacitor-community/speech-recognition": "^6.0.1",
     "@capacitor-mlkit/barcode-scanning": "^6.2.0",
     "@capacitor/core": "^6.2.2",
     "@capacitor/local-notifications": "^6.1.0",

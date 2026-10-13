@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^6.0.1",
+    "@capacitor-community/speech-recognition": "^6.0.1",
     "@capacitor-mlkit/barcode-scanning": "^6.2.0",
     "@capacitor/android": "^6.2.2",
     "@capacitor/core": "^6.2.2",
