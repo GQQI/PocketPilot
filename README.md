@@ -1,249 +1,41 @@
-# PocketPilot
+<p align="center">
+  English | <a href="./README_CN.md">简体中文</a>
+</p>
 
-手机优先的多代理控制台。手机负责挑选和下指令；Cursor CLI、Claude Code、Codex、OpenCode、Gemini CLI 和 DeepSeek Harness 都跑在你的电脑上。输出再流回手机。
+<p align="center">
+  <img src="./website/assets/icon-192.png" alt="PocketPilot" width="96" />
+</p>
 
-界面偏留白，浅色为默认，设置里可以换成深色。底部导航给手机用，宽屏会变成左侧导航。它不是 CloudCLI / Claude Code UI 的皮肤，也不包含那份代码。
+<p align="center">
+  <b>PocketPilot</b> — a phone remote for the coding agents on your PC
+</p>
 
-VS Code 不是这里的代理平台。编辑器只是你自己的工具；PocketPilot 连接的是代理 CLI。
+<p align="center">
+  <a href="https://gqqi.github.io/AgentFrame/">Website</a> ·
+  <a href="./website/docs/guide.html">Handbook</a> ·
+  <a href="./docs/使用指南.md">使用指南</a>
+</p>
 
-## 代理
+<p align="center">
+  <img alt="Node.js" src="https://img.shields.io/badge/Node.js-22%2B-2f6fed" />
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20Android-lightgrey" />
+</p>
 
-| 适配器 | 命令 | 说明 |
-| --- | --- | --- |
-| Cursor CLI | `agent` | CloudCLI 开源注册表里的 cursor。实时模式跑 `agent -p`。 |
-| Claude Code | `claude` | 实时模式跑 `claude -p --model`。 |
-| Codex | `codex` | 实时模式跑 `codex exec --skip-git-repo-check`。模型以本机 Codex 配置为准。 |
-| OpenCode | `opencode` | CloudCLI 开源注册表里的 opencode。实时模式跑 `opencode run`。 |
-| Gemini CLI | `gemini` | CloudCLI 托管文档列出的线路。实时模式跑 `gemini -p -m`。 |
-| DeepSeek Harness | `dsh` | 不是普通的 DeepSeek 对话接口。实时模式跑 `dsh --profile headless`。模型写在 dsh 配置档里（示例：`deepseek-v4-pro`、`deepseek-v4-flash`）。 |
+**PocketPilot（口袋领航）** lets a phone choose an agent, pick a folder, and send a prompt. Cursor CLI, Claude Code, Codex, OpenCode, Gemini CLI, and DeepSeek Harness all run on the computer. Their output streams back to the phone.
 
-默认是演示模式：六条线路都有样例项目、会话、文件和队列。手机和这台开发机都不需要先装 CLI。关掉演示模式后，电脑上的宿主会探测命令，并在你选中的目录里启动对应 CLI。
+The phone can connect over the LAN, an encrypted WebRTC channel, or nearby Bluetooth. Keys from the QR pairing stay on the machine.
 
-新的代理实现 `AgentAdapter`（`packages/agent-core/src/hub.ts`），在创建 Hub 之前调用 `registerAdapter`。内置名单来自 `packages/agent-core/src/catalog.ts`。
+**Windows + Android** · dev UI **http://127.0.0.1:47231**
 
-## 架构
+## Screenshots
 
-手机不安装这些 CLI。电脑上跑一个宿主（`apps/bridge`），界面可以装在手机上，也可以由宿主自己提供。
+![Desktop settings](./website/assets/desktop-settings.png)
 
-```text
-手机浏览器 / PWA
-        │  局域网地址 + 配对码
-        ▼
-apps/bridge     电脑上的宿主。转发指令，把 CLI 输出流回手机
-apps/web        Vite + React 界面
-apps/desktop    Electron 壳，在本机启动宿主并打开窗口
-packages/protocol     共享类型
-packages/agent-core   可插拔适配器、演示引擎、实时 CLI 引擎
-```
+![Phone settings](./website/assets/phone-settings.png)
 
-```mermaid
-flowchart LR
-  Phone[手机] --> Host[电脑上的宿主]
-  Host --> Core[适配器]
-  Core --> Demo[演示引擎]
-  Core --> Live[实时 CLI]
-  Live --> Cursor[agent]
-  Live --> Claude[claude]
-  Live --> Codex[codex]
-  Live --> OpenCode[opencode]
-  Live --> Gemini[gemini]
-  Live --> Dsh[dsh]
-```
+The bilingual site lives in [website/](./website/).
 
-在手机上：选择代理，再用目录选择器挑电脑上的项目目录，然后发送消息。宿主把这段文字交给当前适配器，并把标准输出流式推回会话。六条内置线路走同一条路径。换代理只换适配器，不换手机上的操作。
-
-密钥不会进仓库。环境变量优先；否则写到电脑上的 `~/.pocketpilot/secrets.json`（权限 `0600`）。连接设置和浅色/深色偏好在 `~/.pocketpilot/settings.json`，不含密钥。配对码在 `~/.pocketpilot/host.json`。
-
-## 在 Windows 上让手机连上电脑
-
-1. 安装 `PocketPilot-Setup.exe`（构建见下文“Windows 桌面程序”），从桌面图标打开 **PocketPilot 口袋领航**。
-2. 窗口里会显示服务状态（一键启动/停止）、局域网地址、跨网络通道状态，以及大号配对二维码和 6 位配对码。
-3. 手机安装 APK（`npm run android:debug` 产出 `dist-android\PocketPilot-debug.apk`），打开后扫描二维码；同一网络下也可以填 `http://电脑IP:47241` 加配对码。
-
-对外服务始终要求配对，桌面窗口本身不需要。高级用法（命令行 host）：`npm run host`，终端会打印局域网地址和配对码，见使用指南第 9 节。
-
-之后手机上的流程：
-
-1. 选择代理（Cursor CLI、Claude Code、Codex、OpenCode、Gemini CLI 或 DeepSeek Harness）。
-2. 打开目录选择器，选电脑上的项目目录。演示模式下列出的是 `D:\Project\...` 样例；关掉演示模式后列出真实磁盘。
-3. 在会话里发送文字。宿主在那个目录里启动对应命令，输出实时出现在手机上。
-
-开发时想先看界面：
-
-```powershell
-npm run dev
-```
-
-界面在 `http://127.0.0.1:47231`，同一局域网可以用 `http://<电脑IP>:47231`。开发服务器把接口从这台电脑转发，方便试用。要让其他设备必须填写配对码，用 `npm run host`。
-
-仓库根目录就是应用，之后可以推到自己的 GitHub 仓库（例如 AgentFrame）。按普通推送即可，不要对已有历史做 force-push。
-
-## 本地运行
-
-需要 Node.js 22 或更新版本。
-
-```bash
-npm install
-npm run dev
-```
-
-- 界面：<http://127.0.0.1:47231>
-- 宿主：<http://127.0.0.1:47232>
-
-```bash
-npm test
-npm run build
-npm start
-```
-
-`npm start` 由宿主托管已经构建的界面，默认只监听本机。`npm run host` 监听局域网并要求配对。
-
-## 接上每条线路
-
-先在设置里关掉演示模式，用目录选择器选好电脑上的项目目录，再按需要改命令路径。探测不到命令时，会话里会写明电脑上缺少哪条命令。手机不需要安装它。
-
-### Cursor CLI
-
-安装 Cursor CLI，让 `agent` 出现在 `PATH` 上。文档：<https://cursor.com/docs/cli/overview>。实时提示使用 `agent -p`。模型保持 `auto` 时不附加 `--model`。
-
-### Claude Code
-
-安装 Claude Code 并完成一次登录。文档：<https://docs.anthropic.com/en/docs/claude-code>。实时提示使用 `claude -p --model <model>`。可选环境变量 `ANTHROPIC_API_KEY`。
-
-### Codex
-
-安装 OpenAI Codex CLI 并登录。文档：<https://developers.openai.com/codex>。实时提示使用 `codex exec --skip-git-repo-check`。模型沿用 Codex 自己的配置，不从界面强行传 flag。可选环境变量 `OPENAI_API_KEY`。
-
-### OpenCode
-
-安装 OpenCode。文档：<https://opencode.ai>。实时提示使用 `opencode run`。模型沿用 OpenCode 的配置。
-
-### Gemini CLI
-
-安装 Gemini CLI。文档：<https://github.com/google-gemini/gemini-cli>。实时提示使用 `gemini -p -m <model>`。密钥读取 `GEMINI_API_KEY`，其次 `GOOGLE_API_KEY`。
-
-### DeepSeek Harness
-
-这是 DeepSeek 的开源 harness，命令是 `dsh`，不是裸的 chat completions。
-
-```bash
-npx @deepseek-ai/dsh web
-```
-
-上面这条会打开 Harness 自己的 Web UI。PocketPilot 在实时模式调用的是一轮任务：
-
-```bash
-dsh --profile headless "任务内容"
-```
-
-文档：<https://github.com/deepseek-ai/deepseek-harness>。把 `DEEPSEEK_API_KEY` 放在环境变量里，或在设置页保存到本机。端点会传给子进程的 `DEEPSEEK_BASE_URL`。模型由 dsh 配置档决定，界面里的模型名用来对照，例如 `deepseek-v4-pro` 和 `deepseek-v4-flash`。家目录是 `DSH_HOME`，默认 `~/.dsh`。
-
-Windows 上如果 CLI 是 `.cmd` 垫片，把设置里的命令改成完整路径。
-
-## 安装
-
-### PWA
-
-```bash
-npm run build
-npm start
-```
-
-用手机或电脑上的 Chrome / Edge 打开宿主地址，选「安装应用」。`apps/web` 在生产构建里带有 Web App Manifest。开发服务器不注册 service worker，避免把旧界面缓存住。
-
-### Windows 桌面程序（安装包）
-
-在 Windows 上，于仓库根目录：
-
-```powershell
-npm install
-npm run desktop:dist:win
-```
-
-产物在 `dist-desktop\`：`PocketPilot-Setup-<版本>.exe`（NSIS，可选安装目录，带桌面快捷方式）和 `PocketPilot-Portable-<版本>.zip`（便携版）。安装后双击图标即可使用，不需要命令行：窗口里启动/停止服务、查看局域网地址与跨网络状态、显示配对二维码和配对码、管理已配对设备和设置；关闭窗口最小化到系统托盘。桌面程序内嵌 bridge（子进程，崩溃自动重启），跨网络依赖的原生模块 `node-datachannel` 放在 `app.asar` 之外（`extraResources`），安装后可用。签名默认关闭。
-
-Node 20 上运行 electron-builder 若报 `ERR_REQUIRE_ESM`，先设 `$env:NODE_OPTIONS="--experimental-require-module"`；下载受限时设 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`。详见 [docs/使用指南.md](docs/使用指南.md)。
-
-### 桌面程序调试
-
-```bash
-npm run desktop          # 构建后用 Electron 运行桌面程序（默认端口 47241）
-npm run desktop:smoke    # 端到端自检并截图
-```
-
-## 演示模式里有什么
-
-- 总览：这台电脑、目录、当前代理，以及更换代理
-- 会话：发到电脑上的指令，以及流回来的输出、工具轨迹、终端
-- 项目：文件树、预览、演示用的改动列表和提交记录
-- 队列：等待、排序、放行，以及会话历史
-- 设置：浅色/深色、手机连接与配对码、演示开关、语言、目录、命令、模型、端点、密钥、MCP 样例
-
-实时模式的终端会在所选目录里执行命令。`npm run dev` 和 `npm start` 的宿主默认只监听 `127.0.0.1`。`npm run host` 监听局域网。演示模式的目录列表不会碰真实文件系统。
-
-截图：
-
-```bash
-npx playwright install chromium
-npm run screenshots
-```
-
-需要先开着 `npm run dev`。图片写到 `artifacts/`：`home_simplified.png`、`agent_picker.png`、`remote_directory.png`、`chat_live_output.png`、`settings_theme.png`。
-
-## 环境变量
-
-看 `.env.example`。不要把真实密钥提交进 git。
-
----
-
-# PocketPilot (English)
-
-Mobile-first control panel for coding-agent CLIs. The phone picks an agent and a folder, then forwards prompts. Cursor CLI, Claude Code, Codex, OpenCode, Gemini CLI, and DeepSeek Harness all run on the PC. Their output streams back to the phone.
-
-The interface is quiet and light by default. Settings stores a light or dark preference. Phones use a bottom dock; wider screens use a side rail. It does not reuse CloudCLI / Claude Code UI code or assets.
-
-VS Code is not an agent backend here.
-
-## Agents
-
-| Adapter | Command | Notes |
-| --- | --- | --- |
-| Cursor CLI | `agent` | In the CloudCLI open-source provider registry. Live mode runs `agent -p`. |
-| Claude Code | `claude` | Live mode runs `claude -p --model`. |
-| Codex | `codex` | Live mode runs `codex exec --skip-git-repo-check`. The model stays in the local Codex config. |
-| OpenCode | `opencode` | In the CloudCLI open-source provider registry. Live mode runs `opencode run`. |
-| Gemini CLI | `gemini` | Listed by CloudCLI's hosted docs. Live mode runs `gemini -p -m`. |
-| DeepSeek Harness | `dsh` | Not plain DeepSeek chat. Live mode runs `dsh --profile headless`. The model lives in the dsh profile (`deepseek-v4-pro`, `deepseek-v4-flash` in the upstream examples). |
-
-Demo mode is the default. It ships sample projects, sessions, files, and a queue for all six adapters, so neither the phone nor the dev machine needs the CLIs installed first. Turn it off and the host on the PC probes each command and runs it in the folder you picked.
-
-Add another backend by implementing `AgentAdapter` in `packages/agent-core/src/hub.ts` and calling `registerAdapter` before `createHub`. Built-ins are declared in `packages/agent-core/src/catalog.ts`.
-
-## Architecture
-
-The phone does not install the CLIs. A host (`apps/bridge`) runs on the PC. The UI can be installed on the phone, or served by the host.
-
-The phone chooses an agent, picks a project directory on that PC, and sends a message. The host hands the text to the current adapter and streams stdout back into the session. All six built-in agents share that path. Switching agents swaps the adapter, not the phone flow.
-
-Keys never go into git. Environment variables win; otherwise they are stored on the PC in `~/.pocketpilot/secrets.json` with mode `0600`. Connection settings and the theme live in `~/.pocketpilot/settings.json`. The pairing code lives in `~/.pocketpilot/host.json`.
-
-## Install the desktop app on Windows so a phone can connect
-
-Install `PocketPilot-Setup.exe` (see Install below) and open **PocketPilot**. The window shows the service status (one-click start/stop), the LAN address, the remote channel status, a large pairing QR code (a `#pair=` link), the six-character pairing code, and the list of paired devices. Install the Android APK on the phone and scan the QR code. On the same network you can instead enter `http://<pc-ip>:47241` plus the pairing code. Closing the window minimizes to the tray; the service keeps running. Outside connections always require pairing.
-
-Advanced / headless: `npm run host` builds and listens on `0.0.0.0` with a pairing code printed in the terminal (see `docs/使用指南.md`).
-
-On the phone:
-
-1. Choose an agent (Cursor CLI, Claude Code, Codex, OpenCode, Gemini CLI, or DeepSeek Harness).
-2. Open the folder picker and select a project directory on the PC. Demo mode lists sample `D:\Project\...` paths. With demo mode off, the list is the real disk.
-3. Send a message. The host starts that CLI in the folder, and the output appears on the phone as it is produced.
-
-For local UI work, `npm run dev` serves the interface at <http://127.0.0.1:47231> (or `http://<pc-ip>:47231` on the LAN). The dev server proxies API calls on the PC. Use `npm run host` when other devices must pair.
-
-The repo root is the app. It can be pushed to a GitHub repository such as AgentFrame later with a normal push. Do not force-push over existing history.
-
-## Run
+## Quick start
 
 Node.js 22+.
 
@@ -252,63 +44,54 @@ npm install
 npm run dev
 ```
 
-UI: <http://127.0.0.1:47231> · host: <http://127.0.0.1:47232>
-
-`npm start` serves the built UI on this PC only. `npm run host` listens on the LAN and requires pairing.
+- UI: http://127.0.0.1:47231
+- Host: http://127.0.0.1:47232
 
 ```bash
 npm test
+npm run typecheck
 npm run build
-npm start
+npm start          # this PC only
+npm run host       # LAN, pairing required
 ```
 
-## Pointing at each backend
+## Connect a phone
 
-Turn demo mode off, pick a folder on the computer, and adjust the command if it is not on `PATH`. A missing binary is written into the session as output from the PC. The phone does not install it.
+1. On Windows, `npm run desktop:dist:win` writes `PocketPilot-Setup-*.exe` and a portable zip under `dist-desktop\`.
+2. Open **PocketPilot**. The window shows the service, LAN address, remote channel, Bluetooth, a QR code, and a 6-digit pairing code.
+3. `npm run android:debug` writes `dist-android\PocketPilot-debug.apk`. Scan the QR. On the same Wi-Fi you can enter `http://<pc-ip>:47241` plus the code.
 
-- **Cursor CLI** — <https://cursor.com/docs/cli/overview>. `agent -p`. `--model` is added only when the model is not `auto`.
-- **Claude Code** — <https://docs.anthropic.com/en/docs/claude-code>. `claude -p --model`. Optional `ANTHROPIC_API_KEY`.
-- **Codex** — <https://developers.openai.com/codex>. `codex exec --skip-git-repo-check`. Optional `OPENAI_API_KEY`.
-- **OpenCode** — <https://opencode.ai>. `opencode run`.
-- **Gemini CLI** — <https://github.com/google-gemini/gemini-cli>. `gemini -p -m`. `GEMINI_API_KEY`, then `GOOGLE_API_KEY`.
-- **DeepSeek Harness** — <https://github.com/deepseek-ai/deepseek-harness>. Their own UI is `npx @deepseek-ai/dsh web`. PocketPilot calls `dsh --profile headless "<task>"`. Set `DEEPSEEK_API_KEY`. A non-empty endpoint is passed as `DEEPSEEK_BASE_URL`. Home defaults to `~/.dsh` (`DSH_HOME`).
+After pairing, the phone tries LAN HTTP, then the encrypted remote channel, then Bluetooth. Settings → 通信方式 can force one path. **Allow Bluetooth** on the desktop restarts the service.
 
-On Windows, if the CLI is a `.cmd` shim, paste the full path into the command field.
+Bluetooth advertising uses Windows `GattServiceProvider` (Windows 10 1803+, system Bluetooth on). It does not replace the inbox Bluetooth driver. Other desktops keep LAN and WebRTC and show “Windows only” for Bluetooth.
 
-## Install
+## Agents
 
-PWA: `npm run build && npm start`, then use the browser's install action on the phone or the PC. The manifest is emitted by the production build.
+| Adapter | Command | Live prompt |
+| --- | --- | --- |
+| Cursor CLI | `agent` | `agent -p` |
+| Claude Code | `claude` | `claude -p --model` |
+| Codex | `codex` | `codex exec --skip-git-repo-check` |
+| OpenCode | `opencode` | `opencode run` |
+| Gemini CLI | `gemini` | `gemini -p -m` |
+| DeepSeek Harness | `dsh` | `dsh --profile headless` |
 
-Windows desktop app (installer): build it on Windows with
+Demo mode is the default, so neither side needs a CLI installed. Turn it off and the host probes the commands and runs them in the folder you picked.
 
-```powershell
-npm install
-npm run desktop:dist:win
+A new backend implements `AgentAdapter` (`packages/agent-core/src/hub.ts`) and calls `registerAdapter` before `createHub`. Built-ins are listed in `packages/agent-core/src/catalog.ts`.
+
+## Layout
+
+```text
+apps/web        Vite + React phone UI
+apps/bridge     Host on the PC
+apps/desktop    Electron shell
+apps/android    Capacitor APK
+packages/agent-core
+packages/remote       LAN, WebRTC, and Bluetooth transports
+website/              This product site
 ```
 
-The NSIS installer `PocketPilot-Setup-<version>.exe` and a portable zip are written to `dist-desktop\`. Double-click to install, open PocketPilot from the desktop shortcut, and use the window to start/stop the service and show the pairing QR code. No command line is needed. `npm run desktop` runs the same app from source. The native WebRTC module (`node-datachannel`) ships outside `app.asar` (`extraResources`), so remote pairing works in the installed app.
+Keys never go into git. Environment variables win; otherwise they are stored in `~/.pocketpilot/secrets.json` (mode `0600`). `MOBILEAGENT_*` still maps to `POCKETPILOT_*`. The first launch copies `~/.mobileagent` to `~/.pocketpilot`.
 
-Screenshots of the main flows (with `npm run dev` already running):
-
-```bash
-npx playwright install chromium
-npm run screenshots
-```
-
-Files land in `artifacts/` (`home_simplified.png`, `agent_picker.png`, `remote_directory.png`, `chat_live_output.png`, `settings_theme.png`). `npm run dev` must already be running.
-
-本仓库为 AgentFrame。
-
-## Android 应用（APK）
-
-`apps/android` 是 Capacitor 工程，APK 内置完整的 Web 界面（离线可用，不依赖电脑托管网页），支持相机扫码配对。
-
-```powershell
-npm run android:debug   # 输出 dist-android\PocketPilot-debug.apk（需要 JDK 17 + Android SDK，详见使用指南）
-```
-
-完整的启动、配对、安装、撤销设备说明见 [docs/使用指南.md](docs/使用指南.md)。
-
-## 改名说明
-
-产品原名 MobileAgent，现为 **PocketPilot（口袋领航）**。环境变量 `MOBILEAGENT_*` 仍可使用（等同 `POCKETPILOT_*`）；首次启动时旧目录 `~/.mobileagent` 会被复制到 `~/.pocketpilot`，浏览器里的 `mobileagent.*` 本地存储键会自动迁移到 `pocketpilot.*`，已配对数据不受影响。
+Longer install, pairing, and revoke steps: [docs/使用指南.md](docs/使用指南.md).

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>PocketPilot · 口袋领航</title>
+  <meta name="description" content="手机遥控电脑上的编码代理。Wi-Fi、加密远程通道和蓝牙，数据留在你的机器上。" />
+  <link rel="icon" href="assets/favicon.svg" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="progress"></div>
+  <header class="nav" id="nav">
+    <a class="brand" href="./"><img src="assets/icon-192.png" alt="" /> PocketPilot</a>
+    <nav class="nav-links">
+      <a href="#features" data-zh="功能" data-en="Features">功能</a>
+      <a href="#how" data-zh="如何连接" data-en="Connect">如何连接</a>
+      <a href="#preview" data-zh="界面" data-en="Preview">界面</a>
+      <a href="#download" data-zh="下载" data-en="Download">下载</a>
+      <a href="docs/guide.html" data-zh="使用手册" data-en="Handbook">使用手册</a>
+    </nav>
+    <div class="nav-actions">
+      <button class="icon-btn" id="lang" type="button" aria-label="language">EN</button>
+      <button class="icon-btn" id="theme" type="button" aria-label="theme">☾</button>
+      <a class="btn btn-primary" href="https://github.com/GQQI/AgentFrame" data-zh="查看源码" data-en="Source">查看源码</a>
+      <button class="icon-btn menu-btn" id="menu" type="button" aria-label="menu">☰</button>
+    </div>
+  </header>
+  <div class="drawer" id="drawer">
+    <a href="#features" data-zh="功能" data-en="Features">功能</a>
+    <a href="#how" data-zh="如何连接" data-en="Connect">如何连接</a>
+    <a href="#preview" data-zh="界面" data-en="Preview">界面</a>
+    <a href="#download" data-zh="下载" data-en="Download">下载</a>
+    <a href="docs/guide.html" data-zh="使用手册" data-en="Handbook">使用手册</a>
+    <a href="https://github.com/GQQI/AgentFrame" data-zh="查看源码" data-en="Source">查看源码</a>
+  </div>
+
+  <main>
+    <div class="wrap hero">
+      <div class="kicker" data-zh="开源 · 手机遥控 · 数据留在这台电脑" data-en="Open source · phone remote · data stays on your PC">开源 · 手机遥控 · 数据留在这台电脑</div>
+      <h1 data-zh="口袋领航，把编码代理装进口袋" data-en="A pocket remote for the agents on your PC">口袋领航，把编码代理装进口袋</h1>
+      <p class="lede" data-zh="手机负责挑选和下指令。Cursor CLI、Claude Code、Codex、OpenCode、Gemini CLI 和 DeepSeek Harness 都跑在你的电脑上，输出再流回手机。" data-en="The phone picks an agent and sends the prompt. Cursor CLI, Claude Code, Codex, OpenCode, Gemini CLI, and DeepSeek Harness all run on your PC, and their output streams back.">手机负责挑选和下指令。Cursor CLI、Claude Code、Codex、OpenCode、Gemini CLI 和 DeepSeek Harness 都跑在你的电脑上，输出再流回手机。</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#download" data-zh="开始使用" data-en="Get started">开始使用</a>
+        <a class="btn" href="#features" data-zh="看看能做什么" data-en="See features">看看能做什么</a>
+      </div>
+      <div class="addr">http://127.0.0.1:47231</div>
+    </div>
+
+    <div class="wrap">
+      <div class="stats">
+        <div class="stat"><b>6</b><span data-zh="内置编码代理" data-en="built-in coding agents">内置编码代理</span></div>
+        <div class="stat"><b>3</b><span data-zh="Wi-Fi · 远程 · 蓝牙" data-en="Wi-Fi · remote · Bluetooth">Wi-Fi · 远程 · 蓝牙</span></div>
+        <div class="stat"><b>2</b><span data-zh="中文 / English" data-en="中文 / English">中文 / English</span></div>
+        <div class="stat"><b>2</b><span data-zh="浅色 / 深色" data-en="light / dark">浅色 / 深色</span></div>
+      </div>
+    </div>
+
+    <section id="features">
+      <div class="wrap">
+        <div class="sec-kicker">Features</div>
+        <h2 data-zh="为手机上的真实操作设计" data-en="Built for how you actually work from a phone">为手机上的真实操作设计</h2>
+        <p class="sub" data-zh="同一套界面，换代理只换电脑上的命令。连接方式可以自动选，也可以在设置里逐项打开。" data-en="One phone UI. Switching agents only swaps the command on the PC. The link can pick itself, or you can turn each path on in Settings.">同一套界面，换代理只换电脑上的命令。连接方式可以自动选，也可以在设置里逐项打开。</p>
+        <div class="grid">
+          <article class="card"><div class="tag">AGENTS</div><h3 data-zh="六条代理线路" data-en="Six agent lines">六条代理线路</h3><p data-zh="Cursor、Claude Code、Codex、OpenCode、Gemini、DeepSeek Harness。演示模式不需要先装 CLI。" data-en="Cursor, Claude Code, Codex, OpenCode, Gemini, and DeepSeek Harness. Demo mode needs no CLI installed.">Cursor、Claude Code、Codex、OpenCode、Gemini、DeepSeek Harness。演示模式不需要先装 CLI。</p></article>
+          <article class="card"><div class="tag">LINK</div><h3 data-zh="三种连接" data-en="Three ways to connect">三种连接</h3><p data-zh="同一 Wi-Fi 走局域网 HTTP，其次加密 WebRTC，近距离没有网络时走蓝牙。密钥来自同一次扫码配对。" data-en="Same Wi-Fi uses LAN HTTP, then encrypted WebRTC, then Bluetooth when you are nearby with no network. One pairing secret covers all three.">同一 Wi-Fi 走局域网 HTTP，其次加密 WebRTC，近距离没有网络时走蓝牙。密钥来自同一次扫码配对。</p></article>
+          <article class="card"><div class="tag">PAIR</div><h3 data-zh="扫码配对" data-en="QR pairing">扫码配对</h3><p data-zh="二维码里的密钥在 URL fragment，不进服务器日志。配对后按设备发令牌，可以单独撤销。" data-en="The pairing secret lives in the URL fragment and is not written to server logs. Each phone gets its own token, and you can revoke one device.">二维码里的密钥在 URL fragment，不进服务器日志。配对后按设备发令牌，可以单独撤销。</p></article>
+          <article class="card"><div class="tag">STREAM</div><h3 data-zh="输出边生成边出现" data-en="Output as it is produced">输出边生成边出现</h3><p data-zh="电脑上的标准输出流回会话，不用等整段回答结束。历史、项目和用量留在这台电脑上。" data-en="Stdout streams into the session. History, projects, and usage stay on this PC.">电脑上的标准输出流回会话，不用等整段回答结束。历史、项目和用量留在这台电脑上。</p></article>
+          <article class="card"><div class="tag">DESKTOP</div><h3 data-zh="Windows 桌面壳" data-en="Windows desktop shell">Windows 桌面壳</h3><p data-zh="窗口里启动服务、显示配对码和二维码。关闭窗口进托盘。蓝牙用系统自带的 WinRT，不用换驱动。" data-en="Start the service and show the pairing QR from the window. Close goes to the tray. Bluetooth uses the inbox WinRT stack, not a replacement driver.">窗口里启动服务、显示配对码和二维码。关闭窗口进托盘。蓝牙用系统自带的 WinRT，不用换驱动。</p></article>
+          <article class="card"><div class="tag">THEME</div><h3 data-zh="浅色 / 深色" data-en="Light / dark">浅色 / 深色</h3><p data-zh="蓝灰界面，中英切换。手机端锁住缩放，输入框保持 16px，避免聚焦时页面被放大。" data-en="Blue-slate UI, Chinese and English. The phone UI locks zoom, and inputs stay at 16px so focus does not magnify the page.">蓝灰界面，中英切换。手机端锁住缩放，输入框保持 16px，避免聚焦时页面被放大。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="how">
+      <div class="wrap">
+        <div class="sec-kicker">How it works</div>
+        <h2 data-zh="四步，手机连上电脑" data-en="Four steps from phone to PC">四步，手机连上电脑</h2>
+        <p class="sub" data-zh="电脑跑宿主，手机只装界面。对外连接始终要先配对。" data-en="The host runs on the PC. The phone only installs the UI. Every outside connection must pair first.">电脑跑宿主，手机只装界面。对外连接始终要先配对。</p>
+        <div class="steps">
+          <article class="step"><em>01</em><h3 data-zh="打开桌面程序" data-en="Open the desktop app">打开桌面程序</h3><p data-zh="Windows 上双击 PocketPilot。窗口里能看到服务、局域网地址和配对二维码。" data-en="On Windows, open PocketPilot. The window shows the service, the LAN address, and the pairing QR.">Windows 上双击 PocketPilot。窗口里能看到服务、局域网地址和配对二维码。</p></article>
+          <article class="step"><em>02</em><h3 data-zh="手机扫码" data-en="Scan from the phone">手机扫码</h3><p data-zh="安装 Android APK 后扫描二维码。同一 Wi-Fi 也可以填地址加 6 位配对码。" data-en="Install the Android APK and scan. On the same Wi-Fi you can also enter the address plus the 6-digit code.">安装 Android APK 后扫描二维码。同一 Wi-Fi 也可以填地址加 6 位配对码。</p></article>
+          <article class="step"><em>03</em><h3 data-zh="选代理和目录" data-en="Pick an agent and a folder">选代理和目录</h3><p data-zh="选 Cursor CLI、Claude Code 或其他线路，再选电脑上的项目目录。" data-en="Choose Cursor CLI, Claude Code, or another line, then a project folder on the PC.">选 Cursor CLI、Claude Code 或其他线路，再选电脑上的项目目录。</p></article>
+          <article class="step"><em>04</em><h3 data-zh="发送，看流式回复" data-en="Send, and watch it stream">发送，看流式回复</h3><p data-zh="宿主在那个目录里启动对应命令，文字回到手机。断线后按 Wi-Fi、远程、蓝牙的顺序再连。" data-en="The host starts that command in the folder. If the link drops, it tries Wi-Fi, then remote, then Bluetooth.">宿主在那个目录里启动对应命令，文字回到手机。断线后按 Wi-Fi、远程、蓝牙的顺序再连。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="preview">
+      <div class="wrap">
+        <div class="sec-kicker">Interface</div>
+        <h2 data-zh="浅色清爽，深色沉浸" data-en="Light for the day, dark for the night">浅色清爽，深色沉浸</h2>
+        <p class="sub" data-zh="手机设置、通信方式和 Windows 桌面壳用同一套蓝灰配色。" data-en="Phone settings, the connection menu, and the Windows shell share the same blue-slate palette.">手机设置、通信方式和 Windows 桌面壳用同一套蓝灰配色。</p>
+        <div class="shots">
+          <figure class="shot">
+            <img src="assets/desktop-settings.png" alt="PocketPilot desktop settings" />
+            <figcaption data-zh="Windows 桌面 · 允许局域网、远程通道和蓝牙" data-en="Windows desktop · LAN, remote channel, and Bluetooth">Windows 桌面 · 允许局域网、远程通道和蓝牙</figcaption>
+          </figure>
+          <div class="phone-row">
+            <figure class="shot">
+              <img src="assets/phone-settings.png" alt="Phone settings" />
+              <figcaption data-zh="手机设置 · 浅色" data-en="Phone settings · light">手机设置 · 浅色</figcaption>
+            </figure>
+            <figure class="shot">
+              <img src="assets/phone-dark.png" alt="Phone settings dark" />
+              <figcaption data-zh="手机设置 · 深色" data-en="Phone settings · dark">手机设置 · 深色</figcaption>
+            </figure>
+            <figure class="shot">
+              <img src="assets/phone-link.png" alt="Connection menu" />
+              <figcaption data-zh="通信方式" data-en="Connection menu">通信方式</figcaption>
+            </figure>
+            <figure class="shot">
+              <img src="assets/phone-home.png" alt="Home" />
+              <figcaption data-zh="总览" data-en="Overview">总览</figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="download">
+      <div class="wrap">
+        <div class="sec-kicker">Download</div>
+        <h2 data-zh="三种方式，立刻可用" data-en="Three ways to run it">三种方式，立刻可用</h2>
+        <div class="downloads">
+          <article class="card"><div class="tag">WINDOWS</div><h3 data-zh="桌面安装包" data-en="Desktop installer">桌面安装包</h3><p data-zh="在 Windows 上执行 npm run desktop:dist:win，得到安装包和便携版。双击打开，不需要命令行日常操作。" data-en="On Windows, npm run desktop:dist:win writes an installer and a portable zip. Day to day you just open the window.">在 Windows 上执行 npm run desktop:dist:win，得到安装包和便携版。双击打开，不需要命令行日常操作。</p></article>
+          <article class="card"><div class="tag">ANDROID</div><h3 data-zh="手机 APK" data-en="Phone APK">手机 APK</h3><p data-zh="npm run android:debug 产出调试 APK。界面打进安装包，相机用来扫配对码。" data-en="npm run android:debug builds a debug APK. The UI is inside the package, and the camera scans the pairing code.">npm run android:debug 产出调试 APK。界面打进安装包，相机用来扫配对码。</p></article>
+          <article class="card"><div class="tag">SOURCE</div><h3 data-zh="源码直跑" data-en="From source">源码直跑</h3><p data-zh="需要 Node.js 22+。npm run dev 同时启动界面和宿主，方便改界面。" data-en="Node.js 22+. npm run dev starts the UI and the host together.">需要 Node.js 22+。npm run dev 同时启动界面和宿主，方便改界面。</p></article>
+        </div>
+        <pre><span class="c"># Node.js 22+</span>
+npm install
+npm run dev
+<span class="c"># UI http://127.0.0.1:47231    host http://127.0.0.1:47232</span></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap foot">
+      <div>PocketPilot · 口袋领航</div>
+      <div>
+        <a href="docs/guide.html" data-zh="使用手册" data-en="Handbook">使用手册</a>
+        · <a href="https://github.com/GQQI/AgentFrame">GitHub</a>
+        · <a href="https://github.com/GQQI/AgentFrame/blob/feature/remote-pairing/docs/使用指南.md" data-zh="详细指南" data-en="Full guide">详细指南</a>
+      </div>
+    </div>
+  </footer>
+  <script src="js/main.js"></script>
+</body>
+</html>

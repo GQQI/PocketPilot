@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>PocketPilot 使用手册</title>
+  <link rel="icon" href="../assets/favicon.svg" />
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <header class="nav" id="nav">
+    <a class="brand" href="../"><img src="../assets/icon-192.png" alt="" /> PocketPilot</a>
+    <nav class="nav-links">
+      <a href="../#features" data-zh="功能" data-en="Features">功能</a>
+      <a href="../#download" data-zh="下载" data-en="Download">下载</a>
+      <a href="./guide.html" data-zh="使用手册" data-en="Handbook">使用手册</a>
+    </nav>
+    <div class="nav-actions">
+      <button class="icon-btn" id="lang" type="button">EN</button>
+      <button class="icon-btn" id="theme" type="button">☾</button>
+      <a class="btn btn-primary" href="../" data-zh="返回首页" data-en="Home">返回首页</a>
+    </div>
+  </header>
+  <main class="wrap" style="padding: 36px 0 72px">
+    <div class="sec-kicker">Handbook</div>
+    <h2 data-zh="使用手册" data-en="Handbook">使用手册</h2>
+    <p class="sub" data-zh="电脑跑代理，手机只负责连接和下指令。更完整的安装说明在仓库 docs/使用指南.md。" data-en="Agents run on the PC. The phone connects and sends prompts. The longer install notes live in docs/使用指南.md.">电脑跑代理，手机只负责连接和下指令。更完整的安装说明在仓库 docs/使用指南.md。</p>
+
+    <div class="grid" style="margin-top: 22px">
+      <article class="card">
+        <div class="tag">01</div>
+        <h3 data-zh="电脑端" data-en="On the PC">电脑端</h3>
+        <p data-zh="安装 PocketPilot-Setup.exe，或在仓库根目录执行 npm run desktop。窗口显示服务状态、局域网地址、远程通道、蓝牙状态、二维码和 6 位配对码。关闭窗口会进托盘。" data-en="Install PocketPilot-Setup.exe, or run npm run desktop from the repo. The window shows the service, LAN address, remote channel, Bluetooth, QR code, and 6-digit pairing code. Closing the window goes to the tray.">安装 PocketPilot-Setup.exe，或在仓库根目录执行 npm run desktop。窗口显示服务状态、局域网地址、远程通道、蓝牙状态、二维码和 6 位配对码。关闭窗口会进托盘。</p>
+      </article>
+      <article class="card">
+        <div class="tag">02</div>
+        <h3 data-zh="手机端" data-en="On the phone">手机端</h3>
+        <p data-zh="npm run android:debug 得到 APK。打开后扫描电脑上的二维码。同一 Wi-Fi 也可以填写 http://电脑IP:47241 和配对码。" data-en="npm run android:debug builds the APK. Open it and scan the QR on the PC. On the same Wi-Fi you can enter http://&lt;pc-ip&gt;:47241 plus the pairing code.">npm run android:debug 得到 APK。打开后扫描电脑上的二维码。同一 Wi-Fi 也可以填写 http://电脑IP:47241 和配对码。</p>
+      </article>
+      <article class="card">
+        <div class="tag">03</div>
+        <h3 data-zh="通信方式" data-en="Connection">通信方式</h3>
+        <p data-zh="已配对后自动选择：局域网 HTTP，然后加密远程通道，最后是近距离蓝牙。设置 → 通信方式可以查看当前通道，或改成手动。桌面端「允许蓝牙」会重启服务。" data-en="After pairing, the phone tries LAN HTTP, then the encrypted remote channel, then nearby Bluetooth. Settings → Connection shows the active path. Allow Bluetooth on the desktop restarts the service.">已配对后自动选择：局域网 HTTP，然后加密远程通道，最后是近距离蓝牙。设置 → 通信方式可以查看当前通道，或改成手动。桌面端「允许蓝牙」会重启服务。</p>
+      </article>
+      <article class="card">
+        <div class="tag">04</div>
+        <h3 data-zh="蓝牙" data-en="Bluetooth">蓝牙</h3>
+        <p data-zh="需要 Windows 10 1803 或更新，并打开系统蓝牙。Windows 11 还要允许桌面应用使用蓝牙。先扫一次二维码，蓝牙才使用同一把密钥。不需要更换系统蓝牙驱动。" data-en="Windows 10 1803 or newer, with Bluetooth on. On Windows 11, allow desktop apps to use Bluetooth. Scan the QR once so Bluetooth can reuse that secret. Do not replace the system Bluetooth driver.">需要 Windows 10 1803 或更新，并打开系统蓝牙。Windows 11 还要允许桌面应用使用蓝牙。先扫一次二维码，蓝牙才使用同一把密钥。不需要更换系统蓝牙驱动。</p>
+      </article>
+      <article class="card">
+        <div class="tag">05</div>
+        <h3 data-zh="代理" data-en="Agents">代理</h3>
+        <p data-zh="默认是演示模式。关掉之后，宿主会在你选的目录里启动 agent、claude、codex、opencode、gemini 或 dsh。密钥写在这台电脑的 ~/.pocketpilot，不会进仓库。" data-en="Demo mode is the default. Turn it off and the host runs agent, claude, codex, opencode, gemini, or dsh in the folder you picked. Keys stay in ~/.pocketpilot on that PC and never go into git.">默认是演示模式。关掉之后，宿主会在你选的目录里启动 agent、claude、codex、opencode、gemini 或 dsh。密钥写在这台电脑的 ~/.pocketpilot，不会进仓库。</p>
+      </article>
+      <article class="card">
+        <div class="tag">06</div>
+        <h3 data-zh="开发" data-en="Develop">开发</h3>
+        <p data-zh="npm test 和 npm run typecheck 做检查。npm run dev 的界面在 47231，宿主在 47232。要让其他设备必须配对，用 npm run host。" data-en="npm test and npm run typecheck check the tree. npm run dev serves the UI on 47231 and the host on 47232. Use npm run host when other devices must pair.">npm test 和 npm run typecheck 做检查。npm run dev 的界面在 47231，宿主在 47232。要让其他设备必须配对，用 npm run host。</p>
+      </article>
+    </div>
+  </main>
+  <script src="../js/main.js"></script>
+</body>
+</html>
