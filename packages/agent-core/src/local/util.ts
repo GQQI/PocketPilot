@@ -216,6 +216,29 @@ export function spawnCli(cmd: string, args: string[], options: SpawnOptions = {}
   return child;
 }
 
+/** Like `spawnCli`, but stdin stays open: for CLIs that speak a protocol over stdio and stay running. */
+export function spawnPersistent(cmd: string, args: string[], options: Omit<SpawnOptions, "stdin"> = {}): ChildProcess {
+  const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(cmd);
+  if (needsShell) {
+    const line = [cmd, ...args].map((a, i) => (i === 0 ? cmdEscape(a, false) : cmdEscape(a.replace(/\r?\n/g, " "), true))).join(" ");
+    return spawn(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `"${line}"`], { cwd: options.cwd, env: options.env, windowsHide: true, windowsVerbatimArguments: true });
+  }
+  return spawn(cmd, args, { cwd: options.cwd, env: options.env, windowsHide: true });
+}
+
+/** Ends a long-lived child and, on Windows, the processes under it (a `.cmd` shim leaves node running under cmd.exe). */
+export function killTree(child: ChildProcess): void {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === "win32" && child.pid) {
+    try {
+      __spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+    } catch {
+      /* fall through to kill() */
+    }
+  }
+  try { child.kill(); } catch { /* already gone */ }
+}
+
 export async function runCapture(cmd: string, args: string[], options: SpawnOptions & { timeoutMs?: number } = {}): Promise<{ code: number | null; stdout: string; stderr: string; error?: string }> {
   return new Promise((resolve) => {
     let stdout = "";

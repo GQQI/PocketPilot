@@ -11,7 +11,7 @@
     "@pocketpilot/protocol": "0.1.0"
   },
   "scripts": {
-    "test": "tsx --test src/hub.test.ts src/compat.test.ts src/fixes.test.ts",
+    "test": "tsx --test src/hub.test.ts src/compat.test.ts src/fixes.test.ts src/resident.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

@@ -64,6 +64,10 @@ export class LocalAgents {
       projectCount = (await this.projects(id)).length;
     }
     const installed = detection.cliPath !== null;
+    // Warm a logged-in resident process so the first message does not pay the CLI start-up.
+    if (detection.cliPath && detection.auth.state === "ok" && agent.warm) {
+      try { agent.warm(ctx, detection.cliPath); } catch { /* best effort */ }
+    }
     const value: AgentStatus = {
       id,
       name: meta.name,

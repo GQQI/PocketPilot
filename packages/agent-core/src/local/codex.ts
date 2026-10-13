@@ -3,6 +3,7 @@ import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent, UsageBucket } from "@pocketpilot/protocol";
 import { baseName, cap, exists, prettyError, FileCache, findExecutable, globDirs, home, listDir, oneLine, readHead, readLines, runCapture, runStream, safeStat, startOfToday, tryJson } from "./util";
 import { childEnv, decideLogin } from "./login";
+import { codexResident, residentEnabled, ResidentStartError, warmCodex } from "./resident";
 import { dailyTotals, emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 /**
@@ -134,6 +135,12 @@ function configProjects(): string[] {
   }
 }
 
+/** Login (~/.codex/auth.json) wins; OPENAI_API_KEY is passed only when not logged in and a key was saved. */
+function codexChatEnv(ctx: AgentCtx): NodeJS.ProcessEnv {
+  const loggedIn = exists(path.join(codexHome(), "auth.json"));
+  return childEnv(ctx.env, ["OPENAI_API_KEY"], !loggedIn && ctx.keySource !== "none");
+}
+
 export const codexAgent: LocalAgent = {
   id: "codex",
   history: true,
@@ -247,7 +254,25 @@ export const codexAgent: LocalAgent = {
     return out.filter((m) => m.blocks.length).slice(-limit);
   },
 
+  warm(ctx: AgentCtx, cli: string): void {
+    warmCodex(cli, codexChatEnv(ctx));
+  },
+
   async *chat(req: AgentChatRequest, cli: string, ctx: AgentCtx, signal: AbortSignal): AsyncGenerator<StreamEvent> {
+    // Resident path: one `codex app-server` process keeps threads open; each message is a `turn/start`.
+    if (residentEnabled()) {
+      try {
+        for await (const event of codexResident(cli, codexChatEnv(ctx), { sessionId: req.sessionId, cwd: req.cwd, prompt: req.prompt, model: req.model }, ctx.locale !== "en", signal)) {
+          if (event.type === "error") { yield { type: "error", message: explain(event.message, ctx) }; return; }
+          yield event;
+        }
+        if (!signal.aborted) yield { type: "done" };
+        return;
+      } catch (error) {
+        if (!(error instanceof ResidentStartError)) throw error;
+        yield { type: "status", status: ctx.locale === "en" ? "Resident mode unavailable, using a one-shot codex exec…" : "常驻模式不可用，改用单次 codex exec…" };
+      }
+    }
     const args = ["exec", "--json", "--skip-git-repo-check", "--sandbox", "workspace-write", "-C", req.cwd];
     if (req.model) args.push("-m", req.model);
     if (req.sessionId) args.push("resume", req.sessionId);
@@ -255,8 +280,7 @@ export const codexAgent: LocalAgent = {
     let any = false;
     let failed = "";
     let exit: { code: number | null; stderr: string } | null = null;
-    const loggedIn = exists(path.join(codexHome(), "auth.json"));
-    const env = childEnv(ctx.env, ["OPENAI_API_KEY"], !loggedIn && ctx.keySource !== "none");
+    const env = codexChatEnv(ctx);
     for await (const item of runStream(cli, args, { cwd: req.cwd, env, stdin: req.prompt, json: true, signal })) {
       if (item.kind === "exit") { exit = item; break; }
       if (item.kind === "text") continue;

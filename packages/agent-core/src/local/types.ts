@@ -39,6 +39,8 @@ export interface LocalAgent {
   messages(sessionId: string, limit: number, ctx: AgentCtx): Promise<ChatMessage[]>;
   chat(req: AgentChatRequest, cli: string, ctx: AgentCtx, signal: AbortSignal): AsyncGenerator<StreamEvent>;
   usage(ctx: AgentCtx): Promise<AgentUsage>;
+  /** optional: start a logged-in resident process before the first message */
+  warm?(ctx: AgentCtx, cli: string): void;
   /** optional lightweight "test connection" (login status / key check) */
   test?(ctx: AgentCtx, cli: string | null): Promise<AgentTestResult>;
 }

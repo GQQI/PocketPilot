@@ -5,6 +5,7 @@ import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBl
 import { baseName, cap, exists, FileCache, prettyError, fileUriToPath, findExecutable, home, isDir, listDir, normPath, oneLine, readLines, resolveSlug, runCapture, runStream, safeStat, slugify, startOfToday, tryJson } from "./util";
 import { childEnv, decideLogin, interpretCliLogin } from "./login";
 import { dailyTotals, emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
+import { cursorResident, residentEnabled, ResidentStartError, warmCursor } from "./resident";
 
 /**
  * Cursor.
@@ -179,6 +180,12 @@ async function listModels(cli: string, ctx: AgentCtx): Promise<string[]> {
   return ids;
 }
 
+/** Inject the saved key only after a probe said "not logged in": `cursor-agent` prefers CURSOR_API_KEY over the local login. */
+function chatEnv(ctx: AgentCtx): NodeJS.ProcessEnv {
+  const confirmedOut = loginCache?.value.ok === false;
+  return childEnv(ctx.env, ["CURSOR_API_KEY"], confirmedOut && ctx.keySource !== "none");
+}
+
 export const cursorAgent: LocalAgent = {
   id: "cursor",
   history: true,
@@ -265,15 +272,35 @@ export const cursorAgent: LocalAgent = {
     return ours.messages.slice(-limit).map((m, i) => ({ id: `${sessionId}_${i}`, role: m.role, createdAt: m.at, blocks: [{ type: "text" as const, text: m.text }] }));
   },
 
+  warm(ctx: AgentCtx, cli: string): void {
+    warmCursor(cli, chatEnv(ctx));
+  },
+
   async *chat(req: AgentChatRequest, cli: string, ctx: AgentCtx, signal: AbortSignal): AsyncGenerator<StreamEvent> {
-    // `cursor-agent -p` is a one-shot process: it prints the turn and exits. `--resume` reuses the
-    // remote chat, but the CLI still starts again. There is no verified headless daemon to keep
-    // warm, so this path does not spawn `status` or `--list-models` before the print process.
+    const env = chatEnv(ctx);
+    // Resident path: one `cursor-agent acp` process stays logged in and takes every message
+    // (initialize + authenticate is the ~20 s part of a cold `cursor-agent -p`).
+    if (residentEnabled()) {
+      let text = "";
+      let sessionId = req.sessionId ?? "";
+      try {
+        for await (const event of cursorResident(cli, env, { sessionId: req.sessionId, cwd: req.cwd, prompt: req.prompt, model: req.model }, ctx.locale !== "en", signal)) {
+          if (event.type === "session") sessionId = event.id;
+          if (event.type === "text") text += event.delta;
+          if (event.type === "error") { yield { type: "error", message: explain(event.message, ctx) }; return; }
+          yield event;
+        }
+        if (signal.aborted) return;
+        if (sessionId) recordOur(ctx.dataDir, sessionId, req, text);
+        yield { type: "done" };
+        return;
+      } catch (error) {
+        if (!(error instanceof ResidentStartError)) throw error;
+        yield { type: "status", status: ctx.locale === "en" ? "Resident mode unavailable, using a one-shot cursor-agent…" : "常驻模式不可用，改用单次 cursor-agent…" };
+      }
+    }
+    // One-shot fallback: `cursor-agent -p` prints the turn and exits.
     const args = cursorPrintArgs(req);
-    // Inject the saved key only after a probe said "not logged in". A missing probe must not
-    // overwrite a CLI login: `cursor-agent` prefers CURSOR_API_KEY over the local login.
-    const confirmedOut = loginCache?.value.ok === false;
-    const env = childEnv(ctx.env, ["CURSOR_API_KEY"], confirmedOut && ctx.keySource !== "none");
     let text = "";
     let sessionId = req.sessionId ?? "";
     let failed = "";

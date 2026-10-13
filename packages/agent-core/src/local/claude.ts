@@ -4,6 +4,8 @@ import path from "node:path";
 import type { AgentAuth, AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent, UsageBucket } from "@pocketpilot/protocol";
 import { baseName, cap, exists, prettyError, FileCache, findExecutable, globDirs, home, listDir, oneLine, readLines, runCapture, runStream, safeStat, startOfToday, tryJson } from "./util";
 import { childEnv, decideLogin } from "./login";
+import { claudeResident, residentEnabled, ResidentStartError } from "./resident";
+import type { StreamingQueryFn } from "./claude-stream";
 import { dailyTotals, emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 /**
@@ -105,8 +107,13 @@ export const claudeAgent: LocalAgent = {
     }
     const s = settingsEnv();
     const credsFile = path.join(home(), ".claude", ".credentials.json");
+    // The credential file is not the only place a login lives (an OAuth token can be kept elsewhere),
+    // so ask Claude Code itself when the quick checks find nothing.
+    if (found && !claudeLoggedInNow()) await probeClaudeLogin(found, ctx.env);
     const loggedIn = claudeLoggedInNow();
-    const loginDetail = s.ANTHROPIC_BASE_URL
+    const loginDetail = probedLogin?.value && !exists(credsFile) && !s.ANTHROPIC_BASE_URL && !s.ANTHROPIC_AUTH_TOKEN && !s.ANTHROPIC_API_KEY
+      ? "claude auth status"
+      : s.ANTHROPIC_BASE_URL
       ? `~/.claude/settings.json（${hostOf(s.ANTHROPIC_BASE_URL)}）`
       : exists(credsFile)
         ? "Claude account"
@@ -186,6 +193,25 @@ export const claudeAgent: LocalAgent = {
 
   async *chat(req: AgentChatRequest, cli: string, ctx: AgentCtx, signal: AbortSignal): AsyncGenerator<StreamEvent> {
     const query = await loadClaudeQuery();
+    // Resident path: Agent SDK streaming input keeps one Claude Code process per session.
+    // Not used with a test double (`setClaudeQueryForTests`), which only takes a string prompt.
+    if (query && !queryOverride && residentEnabled()) {
+      const sdkEnv = claudeChildEnv(ctx);
+      try {
+        let failed = false;
+        const options = (hint: { cwd?: string; sessionId?: string; model?: string }) => claudeQueryOptions({ cwd: hint.cwd ?? req.cwd, model: hint.model, sessionId: hint.sessionId }, sdkEnv);
+        const map = () => { const state: SdkMapState = { sawPartial: false, sessionId: req.sessionId ?? "", openTool: "" }; return (m: Record<string, unknown>) => mapClaudeSdkMessage(m, state); };
+        for await (const event of claudeResident(query as unknown as StreamingQueryFn, sdkEnv, options, { sessionId: req.sessionId, cwd: req.cwd, prompt: req.prompt, model: req.model }, map, ctx.locale !== "en", signal)) {
+          if (event.type === "error") { failed = true; yield { type: "error", message: explain(event.message, ctx) }; continue; }
+          yield event;
+        }
+        if (!failed && !signal.aborted) yield { type: "done" };
+        return;
+      } catch (error) {
+        if (!(error instanceof ResidentStartError)) throw error;
+        yield { type: "status", status: ctx.locale === "en" ? "Resident mode unavailable, starting Claude per message…" : "常驻模式不可用，改为每条消息启动 Claude…" };
+      }
+    }
     if (query) {
       const state: SdkMapState = { sawPartial: false, sessionId: req.sessionId ?? "", openTool: "" };
       let failed = false;
@@ -337,7 +363,23 @@ export function setClaudeLoggedInForTests(value: boolean | null): void {
 export function claudeLoggedInNow(): boolean {
   if (claudeLoginOverride !== null) return claudeLoginOverride;
   const s = settingsEnv();
-  return Boolean(s.ANTHROPIC_AUTH_TOKEN || s.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || exists(path.join(home(), ".claude", ".credentials.json")));
+  if (probedLogin?.value && Date.now() - probedLogin.at < 10 * 60_000) return true;
+  return Boolean(s.ANTHROPIC_AUTH_TOKEN || s.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.CLAUDE_CODE_OAUTH_TOKEN || exists(path.join(home(), ".claude", ".credentials.json")));
+}
+
+let probedLogin: { cli: string; at: number; value: boolean } | null = null;
+
+/** `claude auth status` prints JSON with `loggedIn`. Keys are removed for the probe so a saved key cannot pass as a login. */
+async function probeClaudeLogin(cli: string, env: NodeJS.ProcessEnv): Promise<void> {
+  if (probedLogin && probedLogin.cli === cli && Date.now() - probedLogin.at < 60_000) return;
+  const r = await runCapture(cli, ["auth", "status"], { env: childEnv(env, CLAUDE_KEYS, false), timeoutMs: 15_000 }).catch(() => null);
+  const j = r ? tryJson((r.stdout || "").trim()) : null;
+  if (j && typeof j.loggedIn === "boolean") probedLogin = { cli, at: Date.now(), value: j.loggedIn };
+}
+
+/** Tests reset the probed login so one case does not leak into the next. */
+export function resetClaudeLoginProbeForTests(): void {
+  probedLogin = null;
 }
 
 const CLAUDE_KEYS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
