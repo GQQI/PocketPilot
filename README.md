@@ -29,11 +29,13 @@ The phone can connect over the LAN, an encrypted WebRTC channel, or nearby Bluet
 
 ## Screenshots
 
-![Desktop settings](./website/assets/desktop-settings.png)
+<p>
+  <img src="./website/assets/desktop-home.png" alt="Desktop home" width="46%" />
+  <img src="./website/assets/phone-home.png" alt="Phone home" width="26%" />
+  <img src="./website/assets/phone-chat.png" alt="Phone chat" width="26%" />
+</p>
 
-![Phone settings](./website/assets/phone-settings.png)
-
-The bilingual site lives in [website/](./website/).
+Desktop home, phone home, and a phone chat, in one row. The bilingual site lives in [website/](./website/).
 
 ## Quick start
 
@@ -54,6 +56,52 @@ npm run build
 npm start          # this PC only
 npm run host       # LAN, pairing required
 ```
+
+## Build an exe and an apk
+
+Run these from the repository root after `npm install`. Node.js 22+.
+
+### Windows installer (exe)
+
+Build this on Windows:
+
+```powershell
+npm run desktop:dist:win
+```
+
+`dist-desktop\` then contains:
+
+- `PocketPilot-Setup-<version>.exe` — NSIS installer, optional folder, desktop shortcut
+- `PocketPilot-Portable-<version>.zip` — unpack and run `PocketPilot.exe`
+
+If Node 20 reports `ERR_REQUIRE_ESM`, set `$env:NODE_OPTIONS="--experimental-require-module"` first. Node 22 does not need that. If the Electron download is blocked:
+
+```powershell
+$env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+$env:ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
+```
+
+The installer is unsigned. Windows may say it protected your PC; choose More info → Run anyway.
+
+### Android APK
+
+You need JDK 17 and an Android SDK with platform-tools, `platforms;android-34`, and `build-tools;34.0.0`. The script uses `JAVA_HOME` and `ANDROID_HOME` when they are set, otherwise `%USERPROFILE%\jdk-17` and `%USERPROFILE%\android-sdk`. It does not change system environment variables. `JAVA_HOME` must be a JDK 17 path.
+
+```powershell
+npm run android:debug
+```
+
+Output: `dist-android\PocketPilot-debug.apk`.
+
+For a release APK, put the keystore at `release\keystore\pocketpilot-release.keystore` and the password in `release\keystore\pocketpilot-release.keystore.password.txt` (one password, or `alias=` / `storePassword=` / `keyPassword=` lines). Do not commit either file. You can point elsewhere with `POCKETPILOT_KEYSTORE` and `POCKETPILOT_KEYSTORE_PASSWORD_FILE`.
+
+```powershell
+$env:POCKETPILOT_KEYSTORE="C:\path\to\pocketpilot-release.keystore"
+$env:POCKETPILOT_KEYSTORE_PASSWORD_FILE="C:\path\to\password.txt"
+npm run android:release
+```
+
+Output: `dist-android\PocketPilot-release.apk`. An unsigned release APK is not produced.
 
 ## Connect a phone
 

@@ -29,11 +29,13 @@
 
 ## 截图
 
-![桌面设置](./website/assets/desktop-settings.png)
+<p>
+  <img src="./website/assets/desktop-home.png" alt="电脑端主页" width="46%" />
+  <img src="./website/assets/phone-home.png" alt="手机端主页" width="26%" />
+  <img src="./website/assets/phone-chat.png" alt="手机端会话" width="26%" />
+</p>
 
-![手机设置](./website/assets/phone-settings.png)
-
-产品页在 [website/](./website/)。
+从左到右：电脑端主页、手机端主页、手机端会话。产品页在 [website/](./website/)。
 
 ## 快速开始
 
@@ -54,6 +56,52 @@ npm run build
 npm start          # 只监听本机
 npm run host       # 局域网，并要求配对
 ```
+
+## 打包成 exe 和 apk
+
+在仓库根目录执行，先 `npm install`。需要 Node.js 22 或更新版本。
+
+### Windows 安装包（exe）
+
+在 Windows 上打包：
+
+```powershell
+npm run desktop:dist:win
+```
+
+产物在 `dist-desktop\`：
+
+- `PocketPilot-Setup-<版本>.exe`：NSIS 安装包，可选安装目录，带桌面快捷方式
+- `PocketPilot-Portable-<版本>.zip`：便携版，解压后运行里面的 `PocketPilot.exe`
+
+Node 20 上如果 electron-builder 报 `ERR_REQUIRE_ESM`，先执行 `$env:NODE_OPTIONS="--experimental-require-module"`。Node 22 不需要。下载 Electron 受限时：
+
+```powershell
+$env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+$env:ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
+```
+
+安装包默认没有代码签名。Windows 若提示“已保护你的电脑”，选“更多信息 → 仍要运行”。
+
+### Android APK
+
+需要 JDK 17，以及带 platform-tools、`platforms;android-34`、`build-tools;34.0.0` 的 Android SDK。设置了 `JAVA_HOME`、`ANDROID_HOME` 就用它们，否则用 `%USERPROFILE%\jdk-17` 和 `%USERPROFILE%\android-sdk`。脚本不会改系统环境变量。`JAVA_HOME` 必须指向 JDK 17。
+
+```powershell
+npm run android:debug
+```
+
+产物：`dist-android\PocketPilot-debug.apk`。
+
+正式包把密钥库存到 `release\keystore\pocketpilot-release.keystore`，密码写到旁边的 `pocketpilot-release.keystore.password.txt`（一行密码，或 `alias=`、`storePassword=`、`keyPassword=` 三行）。这两个文件不要提交。也可以用 `POCKETPILOT_KEYSTORE` 和 `POCKETPILOT_KEYSTORE_PASSWORD_FILE` 指向别的位置。
+
+```powershell
+$env:POCKETPILOT_KEYSTORE="C:\path\to\pocketpilot-release.keystore"
+$env:POCKETPILOT_KEYSTORE_PASSWORD_FILE="C:\path\to\password.txt"
+npm run android:release
+```
+
+产物：`dist-android\PocketPilot-release.apk`。没有密钥库时不会生成未签名的正式包。
 
 ## 让手机连上电脑
 
