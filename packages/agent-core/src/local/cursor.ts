@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent } from "@pocketpilot/protocol";
 import { baseName, cap, exists, FileCache, prettyError, fileUriToPath, findExecutable, home, isDir, listDir, normPath, oneLine, readLines, resolveSlug, runCapture, runStream, safeStat, slugify, startOfToday, tryJson } from "./util";
-import { childEnv, decideLogin } from "./login";
+import { childEnv, decideLogin, interpretCliLogin } from "./login";
 import { dailyTotals, emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
 
 /**
@@ -142,30 +142,40 @@ const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "");
 let loginCache: { key: string; at: number; value: { ok: boolean; email: string; text: string } } | null = null;
 
 /** `cursor-agent status` decides login from local tokens: "Logged in as x@y" / "Logged in" / "Not logged in". */
-async function loginStatus(cli: string, ctx: AgentCtx): Promise<{ ok: boolean; email: string; text: string }> {
-  if (loginCache && loginCache.key === cli && Date.now() - loginCache.at < 60_000) return loginCache.value;
+async function loginStatus(cli: string, ctx: AgentCtx, fresh = false): Promise<{ ok: boolean; email: string; text: string }> {
+  if (!fresh && loginCache && loginCache.key === cli && Date.now() - loginCache.at < 60_000) return loginCache.value;
+  const previous = loginCache && loginCache.key === cli ? loginCache.value : null;
   // Probe login without a saved key, or the key can hide "Logged in".
-  const r = await runCapture(cli, ["status"], { env: childEnv(ctx.env, ["CURSOR_API_KEY"], false), timeoutMs: 20_000 });
-  const out = stripAnsi(`${r.stdout}\n${r.stderr}`);
-  const email = /Logged in as\s+([^\s@]+@[^\s]+)/i.exec(out)?.[1] ?? "";
-  const ok = r.code === 0 && /Logged in/i.test(out) && !/not logged in/i.test(out);
-  const value = { ok, email, text: oneLine(out, 120) };
-  loginCache = { key: cli, at: Date.now(), value };
-  return value;
+  // A timeout or garbled output is "unknown": retry once, then keep the last definite answer instead of flipping to logged out.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await runCapture(cli, ["status"], { env: childEnv(ctx.env, ["CURSOR_API_KEY"], false), timeoutMs: 20_000 });
+    const out = stripAnsi(`${r.stdout}\n${r.stderr}`);
+    const state = interpretCliLogin(out, r.code ?? -1);
+    if (state === "unknown") continue;
+    const email = /Logged in as\s+([^\s@]+@[^\s]+)/i.exec(out)?.[1] ?? "";
+    const value = { ok: state === "in", email, text: oneLine(out, 120) };
+    loginCache = { key: cli, at: Date.now(), value };
+    return value;
+  }
+  if (previous) return previous;
+  return { ok: false, email: "", text: "cursor-agent status gave no definite answer" };
 }
 
 let modelCache: { key: string; at: number; value: string[] } | null = null;
+const hasKey = (env: NodeJS.ProcessEnv) => Boolean(env.CURSOR_API_KEY);
 
 /** `cursor-agent --list-models` prints "<id> - <Name>" per line. */
 async function listModels(cli: string, ctx: AgentCtx): Promise<string[]> {
-  if (modelCache && modelCache.key === cli && Date.now() - modelCache.at < 600_000) return modelCache.value;
+  const cacheKey = `${cli}|${hasKey(ctx.env) ? "key" : "login"}`;
+  if (modelCache && modelCache.key === cacheKey && Date.now() - modelCache.at < 600_000) return modelCache.value;
   const r = await runCapture(cli, ["--list-models"], { env: ctx.env, timeoutMs: 20_000 });
   const ids: string[] = [];
   for (const raw of stripAnsi(r.stdout).split(/\r?\n/)) {
     const m = /^\s*([A-Za-z0-9][A-Za-z0-9._:-]*)\s+-\s+/.exec(raw);
     if (m && !ids.includes(m[1])) ids.push(m[1]);
   }
-  modelCache = { key: cli, at: Date.now(), value: ids };
+  // Do not cache a failed listing (e.g. "Authentication required"), or the picker stays at the placeholders for 10 minutes.
+  if (ids.length > 0) modelCache = { key: cacheKey, at: Date.now(), value: ids };
   return ids;
 }
 
@@ -187,18 +197,22 @@ export const cursorAgent: LocalAgent = {
       loginDetail: login?.email || (login?.ok ? "cursor-agent status" : undefined),
       absentNote: ctx.locale === "en" ? "cursor-agent was not found and no backup key is saved." : "未找到 cursor-agent，也没有备用密钥。",
     });
-    const models = cli.cliPath && decision.auth.state === "ok"
-      ? await listModels(cli.cliPath, { ...ctx, env: childEnv(ctx.env, ["CURSOR_API_KEY"], decision.useKey) }).catch(() => [])
+    let models = cli.cliPath && decision.auth.state === "ok"
+      ? await listModels(cli.cliPath, { ...ctx, env: childEnv(ctx.env, ["CURSOR_API_KEY"], decision.useKey) }).catch(() => [] as string[])
       : [];
+    // Some cursor-agent builds report "Logged in" from `status` but still demand a key for `--list-models`.
+    // Listing models is read-only, so fall back to the saved key here; chats keep using the login.
+    if (cli.cliPath && models.length === 0 && !decision.useKey && ctx.keySource !== "none") {
+      models = await listModels(cli.cliPath, { ...ctx, env: childEnv(ctx.env, ["CURSOR_API_KEY"], true) }).catch(() => [] as string[]);
+    }
     return { ...cli, hasHistory, dataPath: root(), auth: decision.auth, models };
   },
 
   async test(ctx, cli): Promise<AgentTestResult> {
     const zh = ctx.locale !== "en";
     if (!cli) return { ok: false, message: zh ? "没有找到 cursor-agent，请先安装（设置 → 连接与登录里有安装指引）。" : "cursor-agent was not found. Install it first." };
-    loginCache = null;
     modelCache = null;
-    const login = await loginStatus(cli, ctx).catch(() => null);
+    const login = await loginStatus(cli, ctx, true).catch(() => null);
     if (login?.ok) return { ok: true, message: zh ? `cursor-agent 已登录${login.email ? `：${login.email}` : ""}。已保存的密钥不会覆盖这次登录。` : `cursor-agent is signed in${login.email ? `: ${login.email}` : ""}. A saved key is not applied over this login.` };
     if (ctx.keySource !== "none") {
       const models = await listModels(cli, ctx).catch(() => [] as string[]);
