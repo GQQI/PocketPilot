@@ -12,6 +12,7 @@
     "preview": "vite preview --host 0.0.0.0 --port 47231 --strictPort"
   },
   "dependencies": {
+    "@capacitor-community/bluetooth-le": "^6.0.1",
     "@capacitor-mlkit/barcode-scanning": "^6.2.0",
     "@capacitor/core": "^6.2.2",
     "@capacitor/local-notifications": "^6.1.0",

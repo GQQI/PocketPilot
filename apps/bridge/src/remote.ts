@@ -46,7 +46,7 @@ export async function startRemote(hub: Hub, handle: (request: Request) => Respon
     },
   });
   const sync = () => void host.syncLinks(hub.deviceLinks());
-  hub.setDevicesListener(sync);
+  hub.addDevicesListener(sync);
   sync();
   if (!(await bus.ready(10_000))) log("remote: no public MQTT broker reachable yet (will keep retrying)");
 

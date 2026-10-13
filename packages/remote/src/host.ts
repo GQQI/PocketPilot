@@ -1,5 +1,6 @@
 import { b64uDecode, b64uEncode, deriveSession, deriveSignaling, newEcdh, randomBytes, randomId, SecureChannel, type Ecdh, type SessionKeys } from "./crypto";
 import { SecureMux, type Frame } from "./frames";
+import { serveApiRequest } from "./serve-frame";
 import { openSignal, sealSignal, iceConfig, type SignalBus, type SignalMessage } from "./signaling";
 
 export type RtcCtor = new (config?: RTCConfiguration) => RTCPeerConnection;
@@ -51,8 +52,6 @@ interface Conn {
   remoteSet: Promise<void>;
   resolveRemote: () => void;
 }
-
-const ALLOWED_HEADERS = ["authorization", "content-type", "accept"];
 
 export function toU8(data: unknown): Uint8Array | null {
   if (data instanceof Uint8Array) return data;
@@ -277,44 +276,14 @@ export class RemoteHost {
   private async serve(conn: Conn, frame: Extract<Frame, { t: "req" }>): Promise<void> {
     const mux = conn.mux;
     if (!mux) return;
-    const fail = (message: string, status = 400) => void mux.send({ t: "err", id: frame.id, message, status });
-    if (!frame.path.startsWith("/api/")) return fail("bad path");
     const controller = new AbortController();
     conn.inflight.set(frame.id, controller);
     try {
-      const headers = new Headers();
-      for (const name of ALLOWED_HEADERS) {
-        const value = frame.headers[name];
-        if (value) headers.set(name, value);
-      }
-      // Marks the request as coming from a tunnel: no socket (never loopback), per-peer rate-limit key, never trusted.
-      headers.set("host", "rtc.local");
-      headers.set("x-pocketpilot-peer", conn.cid);
-      const method = frame.method.toUpperCase();
-      const request = new Request(`http://rtc.local${frame.path}`, {
-        method,
-        headers,
-        body: method === "GET" || method === "HEAD" ? undefined : frame.body,
+      await serveApiRequest(mux, frame, (request) => this.options.fetch(request), {
+        peer: conn.cid,
         signal: controller.signal,
+        closed: () => conn.closed,
       });
-      const response = await this.options.fetch(request);
-      const outHeaders: Record<string, string> = {};
-      response.headers.forEach((value, key) => {
-        if (key === "content-type" || key === "cache-control") outHeaders[key] = value;
-      });
-      await mux.send({ t: "res", id: frame.id, status: response.status, headers: outHeaders });
-      const reader = response.body?.getReader();
-      if (reader) {
-        while (!controller.signal.aborted && !conn.closed) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          await mux.send({ t: "chunk", id: frame.id, d: b64uEncode(value) });
-        }
-        if (controller.signal.aborted) await reader.cancel().catch(() => undefined);
-      }
-      if (!conn.closed) await mux.send({ t: "end", id: frame.id });
-    } catch (error) {
-      if (!conn.closed) fail((error as Error).message, 500);
     } finally {
       conn.inflight.delete(frame.id);
     }

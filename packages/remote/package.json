@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "tsx --test --test-force-exit src/remote.test.ts",
+    "test": "tsx --test --test-force-exit src/remote.test.ts src/transport.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

@@ -34,6 +34,7 @@
           <dl class="kv">
             <div><dt data-i18n="lanAddr">局域网地址</dt><dd id="lanAddr">—</dd></div>
             <div><dt data-i18n="rtcState">跨网络通道</dt><dd id="rtcState">—</dd></div>
+            <div><dt data-i18n="bleState">蓝牙</dt><dd id="bleState">—</dd></div>
           </dl>
         </article>
 
@@ -74,6 +75,7 @@
         <div class="row"><div><div class="row-title" data-i18n="port">服务端口</div><div class="muted" data-i18n="portHint">修改后会自动重启服务</div></div><input type="number" id="setPort" min="1024" max="65535"></div>
         <div class="row"><div><div class="row-title" data-i18n="allowLan">允许局域网访问</div><div class="muted" data-i18n="allowLanHint">同一 Wi-Fi 下的手机可直接连接；关闭后仅本机</div></div><label class="switch"><input type="checkbox" id="setAllowLan"><span class="track"></span></label></div>
         <div class="row"><div><div class="row-title" data-i18n="allowRtc">允许跨网络（RTC）</div><div class="muted" data-i18n="allowRtcHint">通过加密 WebRTC 通道在外网连接，二维码需要此功能</div></div><label class="switch"><input type="checkbox" id="setAllowRtc"><span class="track"></span></label></div>
+        <div class="row"><div><div class="row-title" data-i18n="allowBle">允许蓝牙</div><div class="muted" data-i18n="allowBleHint">电脑作为蓝牙外设，手机在近距离、没有网络时可以连接。需要 Windows 10 及以上，并打开系统蓝牙</div></div><label class="switch"><input type="checkbox" id="setAllowBle"><span class="track"></span></label></div>
       </article>
 
       <article class="card">

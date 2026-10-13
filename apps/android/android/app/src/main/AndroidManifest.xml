@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:allowBackup="true"
@@ -49,6 +50,14 @@
     <!-- Voice input uses the system recognizer (Web Speech API) and needs the microphone. -->
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- BLE central. neverForLocation: scans filter on our service UUID and are not used for location. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" tools:targetApi="s" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>
