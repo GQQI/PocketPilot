@@ -29,13 +29,19 @@
 
 ## 截图
 
-<p>
-  <img src="./website/assets/desktop-home.png" alt="电脑端主页" width="46%" />
-  <img src="./website/assets/phone-home.png" alt="手机端主页" width="26%" />
-  <img src="./website/assets/phone-chat.png" alt="手机端会话" width="26%" />
-</p>
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="./website/assets/desktop-home.png" alt="电脑端主页" width="100%" />
+      <br />
+      <img src="./website/assets/desktop-settings.png" alt="电脑端设置" width="100%" />
+    </td>
+    <td width="25%" valign="top"><img src="./website/assets/phone-home.png" alt="手机端主页" width="100%" /></td>
+    <td width="25%" valign="top"><img src="./website/assets/phone-chat.png" alt="手机端会话" width="100%" /></td>
+  </tr>
+</table>
 
-从左到右：电脑端主页、手机端主页、手机端会话。产品页在 [website/](./website/)。
+左边上下是电脑端主页和设置，右边同一行是手机端主页和会话。产品页在 [website/](./website/)。
 
 ## 快速开始
 

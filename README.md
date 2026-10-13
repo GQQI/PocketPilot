@@ -29,13 +29,19 @@ The phone can connect over the LAN, an encrypted WebRTC channel, or nearby Bluet
 
 ## Screenshots
 
-<p>
-  <img src="./website/assets/desktop-home.png" alt="Desktop home" width="46%" />
-  <img src="./website/assets/phone-home.png" alt="Phone home" width="26%" />
-  <img src="./website/assets/phone-chat.png" alt="Phone chat" width="26%" />
-</p>
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="./website/assets/desktop-home.png" alt="Desktop home" width="100%" />
+      <br />
+      <img src="./website/assets/desktop-settings.png" alt="Desktop settings" width="100%" />
+    </td>
+    <td width="25%" valign="top"><img src="./website/assets/phone-home.png" alt="Phone home" width="100%" /></td>
+    <td width="25%" valign="top"><img src="./website/assets/phone-chat.png" alt="Phone chat" width="100%" /></td>
+  </tr>
+</table>
 
-Desktop home, phone home, and a phone chat, in one row. The bilingual site lives in [website/](./website/).
+Desktop home and settings stack on the left. Phone home and chat sit in the same row on the right. The bilingual site lives in [website/](./website/).
 
 ## Quick start
 
