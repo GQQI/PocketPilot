@@ -26,11 +26,13 @@ function Escape([string]$text) {
   return $text.Replace([char]34, "'").Replace([char]10, " ").Replace([char]13, " ")
 }
 
-function Await($op) {
+function Await($op, $resultType) {
   $methods = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
     $_.Name -eq "AsTask" -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1
   }
-  $arg = $op.GetType().GenericTypeArguments[0]
+  $arg = $resultType
+  if (-not $arg) { $arg = $op.GetType().GenericTypeArguments[0] }
+  if (-not $arg) { throw "AsTask result type unresolved" }
   $task = $methods[0].MakeGenericMethod(@($arg)).Invoke($null, @($op))
   $task.Wait()
   if ($task.IsFaulted) { throw $task.Exception.GetBaseException() }
@@ -49,7 +51,7 @@ try {
   $serviceUuid = [guid]$env:POCKETPILOT_BLE_SERVICE
   $rxUuid = [guid]$env:POCKETPILOT_BLE_RX
   $txUuid = [guid]$env:POCKETPILOT_BLE_TX
-  $created = Await ([Windows.Devices.Bluetooth.GenericAttributeProfile.GattServiceProvider]::CreateAsync($serviceUuid))
+  $created = Await ([Windows.Devices.Bluetooth.GenericAttributeProfile.GattServiceProvider]::CreateAsync($serviceUuid)) [Windows.Devices.Bluetooth.GenericAttributeProfile.GattServiceProviderResult]
   if ($created.Error.ToString() -ne "Success") { throw ("radio " + $created.Error.ToString()) }
   $provider = $created.ServiceProvider
   $service = $provider.Service
@@ -58,14 +60,14 @@ try {
   $rxProps = [int][Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristicProperties]::Write -bor [int][Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristicProperties]::WriteWithoutResponse
   $rxParams.CharacteristicProperties = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristicProperties]$rxProps
   $rxParams.WriteProtectionLevel = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattProtectionLevel]::Plain
-  $rxResult = Await ($service.CreateCharacteristicAsync($rxUuid, $rxParams))
+  $rxResult = Await ($service.CreateCharacteristicAsync($rxUuid, $rxParams)) [Windows.Devices.Bluetooth.GenericAttributeProfile.GattLocalCharacteristicResult]
   if ($rxResult.Error.ToString() -ne "Success") { throw ("rx " + $rxResult.Error.ToString()) }
   $rx = $rxResult.Characteristic
 
   $txParams = New-Object Windows.Devices.Bluetooth.GenericAttributeProfile.GattLocalCharacteristicParameters
   $txProps = [int][Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristicProperties]::Notify
   $txParams.CharacteristicProperties = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristicProperties]$txProps
-  $txResult = Await ($service.CreateCharacteristicAsync($txUuid, $txParams))
+  $txResult = Await ($service.CreateCharacteristicAsync($txUuid, $txParams)) [Windows.Devices.Bluetooth.GenericAttributeProfile.GattLocalCharacteristicResult]
   if ($txResult.Error.ToString() -ne "Success") { throw ("tx " + $txResult.Error.ToString()) }
   $script:txChar = $txResult.Characteristic
 
@@ -73,7 +75,7 @@ try {
     param($sender, $args)
     $deferral = $args.GetDeferral()
     try {
-      $req = Await ($args.GetRequestAsync())
+      $req = Await ($args.GetRequestAsync()) [Windows.Devices.Bluetooth.GenericAttributeProfile.GattWriteRequest]
       $reader = [Windows.Storage.Streams.DataReader]::FromBuffer($req.Value)
       $len = [int]$reader.UnconsumedBufferLength
       $bytes = New-Object byte[] $len
@@ -120,7 +122,7 @@ try {
         $writer = New-Object Windows.Storage.Streams.DataWriter
         $writer.WriteBytes([byte[]]$raw)
         $buffer = $writer.DetachBuffer()
-        $null = Await ($script:txChar.NotifyValueAsync($buffer))
+        $null = Await ($script:txChar.NotifyValueAsync($buffer)) [System.Collections.Generic.IReadOnlyList[[Windows.Devices.Bluetooth.GenericAttributeProfile.GattClientNotificationResult, Windows.Devices.Bluetooth, ContentType=WindowsRuntime]]]
       } catch {
         Emit ('{"e":"log","m":"' + (Escape $_.Exception.Message) + '"}')
       }
