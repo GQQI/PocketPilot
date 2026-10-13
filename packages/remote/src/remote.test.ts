@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { RTCPeerConnection } from "node-datachannel/polyfill";
-import { applyChatEvent, assistantText, type ChatTurn } from "../../../apps/web/src/lib/chat-stream.ts";
-import { consumeSse } from "../../../apps/web/src/lib/sse.ts";
+import { applyChatEvent, assistantText, type ChatTurn } from "../../../apps/web/src/lib/chat-stream";
+import { consumeSse } from "../../../apps/web/src/lib/sse";
 import { b64uEncode, deriveSession, deriveSignaling, MemoryBus, newEcdh, open, randomBytes, RemoteClient, RemoteHost, seal, SecureChannel, type RtcCtor } from "./index";
 
 const RTC = RTCPeerConnection as unknown as RtcCtor;

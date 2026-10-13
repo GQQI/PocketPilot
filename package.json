@@ -13,7 +13,7 @@
     "start": "node scripts/serve-host.mjs",
     "host": "npm run build && node scripts/serve-host.mjs --lan",
     "test": "npm run test -w @pocketpilot/agent-core && npm run test -w @pocketpilot/remote && npm run test -w @pocketpilot/web",
-    "typecheck": "npm run typecheck -w @pocketpilot/agent-core && npm run typecheck -w @pocketpilot/bridge && npm run typecheck -w @pocketpilot/web",
+    "typecheck": "npm run typecheck -w @pocketpilot/agent-core && npm run typecheck -w @pocketpilot/remote && npm run typecheck -w @pocketpilot/bridge && npm run typecheck -w @pocketpilot/web",
     "desktop": "npm run build && npm run start -w @pocketpilot/desktop",
     "desktop:dist": "npm run build && npm run dist -w @pocketpilot/desktop",
     "desktop:dist:win": "npm run build && npm run dist:win -w @pocketpilot/desktop",

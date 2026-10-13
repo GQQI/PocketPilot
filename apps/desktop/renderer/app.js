@@ -5,7 +5,7 @@ const api = window.pp;
 const I18N = {
   zh: {
     brandSub: "口袋领航 · 电脑端", tabHome: "主页", tabSettings: "设置",
-    statusTitle: "服务状态", lanAddr: "局域网地址", rtcState: "跨网络通道",
+    statusTitle: "服务状态", lanAddr: "局域网地址", rtcState: "跨网络通道", bleState: "蓝牙",
     devicesTitle: "已配对设备", pairTitle: "手机配对", pairHint: "打开手机端 PocketPilot，扫描二维码连接",
     pairCode: "配对码", copyLink: "复制链接", refreshQr: "刷新二维码",
     grpGeneral: "通用", autoStart: "开机自启", autoStartHint: "登录 Windows 后自动在托盘中运行",
@@ -13,6 +13,7 @@ const I18N = {
     grpNetwork: "网络", port: "服务端口", portHint: "修改后会自动重启服务",
     allowLan: "允许局域网访问", allowLanHint: "同一 Wi-Fi 下的手机可直接连接；关闭后仅本机",
     allowRtc: "允许跨网络（RTC）", allowRtcHint: "通过加密 WebRTC 通道在外网连接，二维码需要此功能",
+    allowBle: "允许蓝牙", allowBleHint: "电脑作为蓝牙外设，手机在近距离、没有网络时可以连接。需要 Windows 10 及以上，并打开系统蓝牙",
     grpAgent: "代理", workspace: "工作目录", browse: "选择…", save: "保存", clear: "清除",
     demoMode: "演示模式", demoModeHint: "使用模拟数据，不调用真实命令行代理", apiKeys: "代理密钥",
     grpAbout: "关于", version: "版本", dataDir: "数据目录", logs: "服务日志", open: "打开",
@@ -20,6 +21,7 @@ const I18N = {
     running: "服务运行中", stopped: "服务已停止", starting: "正在启动…", restarting: "服务异常，正在自动重启…", error: "服务启动失败",
     runningSub: "手机可以连接这台电脑", stoppedSub: "打开开关以允许手机连接", port_: "端口",
     lanOff: "已关闭（仅本机）", rtcOff: "已关闭", rtcOn: (m, t, c) => `信令 ${m}/${t} 已连接 · ${c} 个活跃连接`, rtcWaiting: "正在连接信令服务器…",
+    bleOff: "已关闭", bleOn: "正在广播", bleWait: "正在启动", bleWin: "仅 Windows 支持蓝牙外设",
     noDevices: "还没有配对设备，用手机扫描右侧二维码即可添加", devCount: (n) => `${n} 台`,
     online: "刚刚在线", ago: (s) => { const m = Math.floor(s / 60); if (m < 1) return "刚刚在线"; if (m < 60) return `${m} 分钟前在线`; const h = Math.floor(m / 60); if (h < 24) return `${h} 小时前在线`; return `${Math.floor(h / 24)} 天前在线`; },
     revoke: "撤销", confirmRevoke: "确认撤销？",
@@ -30,7 +32,7 @@ const I18N = {
   },
   en: {
     brandSub: "Desktop host", tabHome: "Home", tabSettings: "Settings",
-    statusTitle: "Service", lanAddr: "LAN address", rtcState: "Remote channel",
+    statusTitle: "Service", lanAddr: "LAN address", rtcState: "Remote channel", bleState: "Bluetooth",
     devicesTitle: "Paired devices", pairTitle: "Pair a phone", pairHint: "Open PocketPilot on your phone and scan the QR code",
     pairCode: "Pairing code", copyLink: "Copy link", refreshQr: "Refresh QR",
     grpGeneral: "General", autoStart: "Launch at login", autoStartHint: "Run in the tray after you sign in to Windows",
@@ -38,6 +40,7 @@ const I18N = {
     grpNetwork: "Network", port: "Service port", portHint: "The service restarts when changed",
     allowLan: "Allow LAN access", allowLanHint: "Phones on the same Wi-Fi can connect directly; off = this PC only",
     allowRtc: "Allow remote (RTC)", allowRtcHint: "Encrypted WebRTC channel over the internet; required for the QR code",
+    allowBle: "Allow Bluetooth", allowBleHint: "This PC advertises as a Bluetooth peripheral so a nearby phone can connect with no network. Requires Windows 10 or later with Bluetooth on",
     grpAgent: "Agents", workspace: "Workspace folder", browse: "Browse…", save: "Save", clear: "Clear",
     demoMode: "Demo mode", demoModeHint: "Use simulated data instead of real CLI agents", apiKeys: "Agent API keys",
     grpAbout: "About", version: "Version", dataDir: "Data folder", logs: "Service log", open: "Open",
@@ -45,6 +48,7 @@ const I18N = {
     running: "Service running", stopped: "Service stopped", starting: "Starting…", restarting: "Service crashed, restarting…", error: "Service failed to start",
     runningSub: "Phones can connect to this PC", stoppedSub: "Turn on the switch to accept phones", port_: "Port",
     lanOff: "Off (this PC only)", rtcOff: "Off", rtcOn: (m, t, c) => `Signaling ${m}/${t} up · ${c} active connections`, rtcWaiting: "Connecting to signaling servers…",
+    bleOff: "Off", bleOn: "Advertising", bleWait: "Starting", bleWin: "Bluetooth peripheral needs Windows",
     noDevices: "No paired devices yet. Scan the QR code with your phone.", devCount: (n) => `${n}`,
     online: "Online just now", ago: (s) => { const m = Math.floor(s / 60); if (m < 1) return "Online just now"; if (m < 60) return `${m} min ago`; const h = Math.floor(m / 60); if (h < 24) return `${h} h ago`; return `${Math.floor(h / 24)} d ago`; },
     revoke: "Revoke", confirmRevoke: "Confirm?",
@@ -122,6 +126,16 @@ function render() {
     rtc = !running ? "—" : r && r.mqttConnected > 0 ? t("rtcOn", r.mqttConnected, r.mqttTotal, r.connections) : t("rtcWaiting");
   }
   $("rtcState").textContent = rtc;
+  let ble = t("bleOff");
+  if (settings.allowBle) {
+    const b = status && status.ble;
+    if (!running) ble = "—";
+    else if (b && b.error === "windows-only") ble = t("bleWin");
+    else if (b && b.error) ble = b.error;
+    else if (b && b.advertising) ble = t("bleOn") + (b.connections ? ` · ${b.connections}` : "");
+    else ble = t("bleWait");
+  }
+  $("bleState").textContent = ble;
 
   renderDevices(status ? status.devices : []);
   renderPairing();
@@ -130,6 +144,7 @@ function render() {
   $("setCloseToTray").checked = settings.closeToTray;
   $("setAllowLan").checked = settings.allowLan;
   $("setAllowRtc").checked = settings.allowRtc;
+  $("setAllowBle").checked = settings.allowBle;
   $("setLanguage").value = settings.language;
   if (document.activeElement !== $("setPort")) $("setPort").value = settings.port;
   $("aboutVersion").textContent = `PocketPilot ${state.version}`;
@@ -235,6 +250,7 @@ $("setCloseToTray").addEventListener("change", (e) => setSetting({ closeToTray: 
 $("setLanguage").addEventListener("change", (e) => setSetting({ language: e.target.value }));
 $("setAllowLan").addEventListener("change", (e) => { session = null; setSetting({ allowLan: e.target.checked }, t("restartedSvc")); });
 $("setAllowRtc").addEventListener("change", (e) => { session = null; setSetting({ allowRtc: e.target.checked }, t("restartedSvc")); });
+$("setAllowBle").addEventListener("change", (e) => setSetting({ allowBle: e.target.checked }, t("restartedSvc")));
 const commitPort = () => { const v = Number($("setPort").value); if (Number.isInteger(v) && v >= 1024 && v <= 65535 && v !== state.settings.port) { session = null; setSetting({ port: v }, t("restartedSvc")); } else $("setPort").value = state.settings.port; };
 $("setPort").addEventListener("change", commitPort);
 $("setPort").addEventListener("keydown", (e) => { if (e.key === "Enter") $("setPort").blur(); });

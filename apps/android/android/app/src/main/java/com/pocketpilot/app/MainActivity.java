@@ -1,6 +1,7 @@
 package com.pocketpilot.app;
 
 import android.os.Bundle;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.BridgeActivity;
@@ -35,5 +36,23 @@ public class MainActivity extends BridgeActivity {
                 );
             }
         });
+        lockWebViewZoom();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        lockWebViewZoom();
+    }
+
+    /** Capacitor's WebView otherwise still pinch-zooms even when the viewport forbids it. */
+    private void lockWebViewZoom() {
+        WebView view = getBridge() == null ? null : getBridge().getWebView();
+        if (view == null) return;
+        WebSettings settings = view.getSettings();
+        settings.setSupportZoom(false);
+        settings.setBuiltInZoomControls(false);
+        settings.setDisplayZoomControls(false);
+        settings.setTextZoom(100);
     }
 }

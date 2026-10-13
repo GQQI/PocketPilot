@@ -1,5 +1,7 @@
-import { BarChart3, Bell, ChevronLeft, ChevronRight, Cpu, FileText, FolderOpen, Info, KeyRound, Palette, ShieldCheck, Trash2, Wrench, Bot, Lock } from "lucide-react";
+import { BarChart3, Bell, Bluetooth, ChevronLeft, ChevronRight, Cpu, FileText, FolderOpen, Globe, Info, KeyRound, Palette, RadioTower, ShieldCheck, Trash2, Wifi, Wrench, Bot, Lock } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { TransportKind } from "@pocketpilot/remote";
+import { TRANSPORT_KINDS } from "@pocketpilot/remote";
 import type { AgentProject, AgentStatus, AgentUsage } from "@pocketpilot/protocol";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router";
@@ -9,8 +11,10 @@ import { Mark } from "@/components/shell";
 import { Button, Input } from "@/components/ui";
 import { UsageDetail } from "@/components/usage";
 import { api } from "@/lib/api";
+import { bleAvailable } from "@/lib/ble-phone";
+import { useTransportPolicy, writePolicy } from "@/lib/link-manager";
 import { getPrefs, notifyTask, permissionState, requestPermission, setPrefs, type NotifyPrefs, type PermissionState } from "@/lib/notify";
-import { rtcConfigured, rtcHost } from "@/lib/rtc";
+import { rtcConfigured, rtcHost, useLinkState } from "@/lib/rtc";
 import { useApp } from "@/lib/store";
 import { APP_VERSION } from "@/lib/version";
 
@@ -80,6 +84,8 @@ export function SettingsRouter() {
       <Route path="security" element={<SecurityPage />} />
       <Route path="privacy" element={<PrivacyPage />} />
       <Route path="appearance" element={<AppearancePage />} />
+      <Route path="link" element={<CommPage />} />
+      <Route path="link/:kind" element={<CommDetail />} />
       <Route path="about" element={<AboutPage />} />
       <Route path="about/:doc" element={<DocPage />} />
       <Route path="*" element={<Navigate to="/settings" replace />} />
@@ -89,9 +95,20 @@ export function SettingsRouter() {
 
 /* ------------------------------------------------------------------ level 1 */
 
+const COMM_ICON = { lan: Wifi, rtc: Globe, ble: Bluetooth } as const;
+
 function SettingsHome() {
   const { t, agent, overview, data, locale } = useApp();
   const prefs = getPrefs();
+  const link = useLinkState();
+  const policy = useTransportPolicy();
+  const commLabel = !rtcConfigured()
+    ? t("s.comm.unpaired")
+    : link.phase === "connected" && link.via
+      ? t(`s.comm.via.${link.via}`)
+      : policy.mode === "auto"
+        ? t("s.comm.auto")
+        : t(`s.comm.kind.${policy.mode}`);
   return (
     <div className="subpage app-scroll h-full overflow-y-auto px-4 pb-10 md:px-8" data-testid="settings">
       <h1 className="display !p-0 text-3xl">{t("s.title")}</h1>
@@ -103,6 +120,7 @@ function SettingsHome() {
         <Row icon={ShieldCheck} title={t("s.security")} to="/settings/security" />
         <Row icon={Lock} title={t("s.privacy")} to="/settings/privacy" />
         <Row icon={Palette} title={t("s.appearance")} value={`${data?.settings.theme === "dark" ? t("set.dark") : t("set.light")} · ${locale === "zh" ? "中文" : "English"}`} to="/settings/appearance" />
+        <Row testid="row-comm" icon={RadioTower} title={t("s.comm")} value={commLabel} to="/settings/link" />
       </Group>
       <Group>
         <Row icon={Info} title={t("s.about")} value={APP_VERSION} to="/settings/about" />
@@ -480,6 +498,53 @@ function AppearancePage() {
         <Row title="中文" right={<Radio on={locale === "zh"} />} onClick={() => void api.saveSettings({ locale: "zh" }).then(replace)} />
         <Row title="English" right={<Radio on={locale === "en"} />} onClick={() => void api.saveSettings({ locale: "en" }).then(replace)} />
       </Group>
+    </SubPage>
+  );
+}
+
+function CommPage() {
+  const { t } = useApp();
+  const link = useLinkState();
+  const policy = useTransportPolicy();
+  const current = link.phase === "connected" && link.via ? t(`s.comm.via.${link.via}`) : t("s.comm.none");
+  return (
+    <SubPage title={t("s.comm")} back="/settings" testid="comm-page">
+      <Group title={t("s.comm.now")}>
+        <Row title={current} value={policy.mode === "auto" ? t("s.comm.auto") : t("s.comm.manual")} />
+      </Group>
+      <Group title={t("s.comm.pick")} note={t("s.comm.autoHelp")}>
+        <Row testid="comm-auto" icon={RadioTower} title={t("s.comm.autoTitle")} value={policy.mode === "auto" ? t("s.comm.using") : ""} to="/settings/link/auto" />
+        {TRANSPORT_KINDS.map((kind) => {
+          const Icon = COMM_ICON[kind];
+          return (
+            <Row key={kind} testid={`comm-${kind}`} icon={Icon} title={t(`s.comm.kind.${kind}`)} value={policy.enabled[kind] ? t("s.on") : t("s.off")} to={`/settings/link/${kind}`} />
+          );
+        })}
+      </Group>
+    </SubPage>
+  );
+}
+
+function CommDetail() {
+  const { kind = "" } = useParams();
+  const { t } = useApp();
+  const policy = useTransportPolicy();
+  if (kind !== "auto" && !TRANSPORT_KINDS.includes(kind as TransportKind)) return <Navigate to="/settings/link" replace />;
+  const manual = kind as "auto" | TransportKind;
+  const using = manual === "auto" ? policy.mode === "auto" : policy.mode === manual;
+  return (
+    <SubPage title={manual === "auto" ? t("s.comm.autoTitle") : t(`s.comm.kind.${manual}`)} back="/settings/link" testid="comm-detail">
+      <p className="set-note !mt-2">{t(`s.comm.help.${manual}`)}</p>
+      {manual !== "auto" ? (
+        <Group title={t("s.comm.switch")}>
+          <Row title={t("s.comm.on")} right={<Switch on={policy.enabled[manual]} label={t("s.comm.on")} onChange={(on) => writePolicy({ ...policy, enabled: { ...policy.enabled, [manual]: on }, mode: !on && policy.mode === manual ? "auto" : policy.mode })} />} />
+        </Group>
+      ) : null}
+      <Group>
+        <Row testid="comm-use" title={t("s.comm.use")} right={<Radio on={using} />} onClick={() => writePolicy(manual === "auto" ? { ...policy, mode: "auto" } : { ...policy, mode: manual, enabled: { ...policy.enabled, [manual]: true } })} />
+      </Group>
+      {manual === "ble" && !bleAvailable() ? <p className="set-note">{t("s.comm.androidOnly")}</p> : null}
+      {manual === "ble" && !rtcConfigured() ? <p className="set-note">{t("s.comm.needPair")}</p> : null}
     </SubPage>
   );
 }

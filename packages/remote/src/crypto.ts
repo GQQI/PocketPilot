@@ -122,6 +122,17 @@ export async function deriveSession(
   return role === "client" ? { send: c2h, recv: h2c } : { send: h2c, recv: c2h };
 }
 
+/**
+ * BLE has no signaling round-trip, so both directions are derived straight from the pairing
+ * secret (the QR one-time secret, or the persisted link secret). Same AES-GCM counter channel as WebRTC.
+ */
+export async function deriveBleSession(secret: Uint8Array, role: "client" | "host"): Promise<SessionKeys> {
+  const salt = enc.encode("pocketpilot/ble/v1");
+  const c2h = await aesKey(await hkdfBits(secret, salt, enc.encode("ble c2h"), 256));
+  const h2c = await aesKey(await hkdfBits(secret, salt, enc.encode("ble h2c"), 256));
+  return role === "client" ? { send: c2h, recv: h2c } : { send: h2c, recv: c2h };
+}
+
 function counterIv(counter: number): Uint8Array {
   const iv = new Uint8Array(12);
   new DataView(iv.buffer).setBigUint64(4, BigInt(counter));

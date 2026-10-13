@@ -8,6 +8,7 @@ import path from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Context } from "hono";
+import { startBle, type BleService } from "./ble";
 import { startRemote, type RemoteService } from "./remote";
 import { sseFrom } from "./sse";
 
@@ -19,6 +20,7 @@ const staticDir = process.env.POCKETPILOT_STATIC;
 const port = Number(process.env.POCKETPILOT_PORT ?? 47232);
 const hostname = process.env.HOST ?? "127.0.0.1";
 let remote: RemoteService | null = null;
+let ble: BleService | null = null;
 
 app.onError((error, c) => {
   if (error instanceof HubError) return c.json({ error: error.message, code: error.code }, error.status as 400);
@@ -262,6 +264,12 @@ serve({ fetch: app.fetch, port, hostname }, () => {
   if (hub.remote) console.log("  remote mode: loopback is NOT trusted, every client must pair");
 });
 
+if (process.env.POCKETPILOT_BLE === "1") {
+  void startBle(hub, (request) => app.fetch(request), (message) => console.log(`  [${message}]`)).then((service) => {
+    ble = service;
+  }).catch((error) => console.log(`  [bluetooth] ${(error as Error).message}`));
+}
+
 if (process.env.POCKETPILOT_RTC === "1") {
   void (async () => {
     remote = await startRemote(hub, (request) => app.fetch(request), (message) => console.log(`  [remote] ${message}`), () => phoneUrls(port, true).filter((url) => !url.includes("127.0.0.1")));
@@ -284,6 +292,7 @@ function desktopStatus() {
     lanUrl: pwaBaseUrl(),
     code: hub.pairingCode(),
     rtc: remote ? { enabled: true, ...remote.stats() } : { enabled: process.env.POCKETPILOT_RTC === "1", mqttConnected: 0, mqttTotal: 0, connections: 0, links: 0 },
+    ble: ble ? ble.stats() : { enabled: process.env.POCKETPILOT_BLE === "1", advertising: false, connections: 0, error: "" },
     devices: hub.listDevices(),
   };
 }

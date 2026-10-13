@@ -428,6 +428,15 @@ export class Hub {
     this.onDevices = listener;
   }
 
+  /** Stack another listener. Remote and Bluetooth each subscribe without wiping the other. */
+  addDevicesListener(listener: () => void): void {
+    const prev = this.onDevices;
+    this.onDevices = () => {
+      prev?.();
+      listener();
+    };
+  }
+
   /** Regenerate the pairing code (remote mode does this after every pairing and every lockout). */
   rotatePairingCode(): string {
     this.hostSecrets.code = makePairingCode();
