@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gqqi.github.io/AgentFrame/">产品网页</a> ·
+  <a href="https://gqqi.github.io/PocketPilot/">产品网页</a> ·
   <a href="./docs/使用指南.md">安装细则</a>
 </p>
 
