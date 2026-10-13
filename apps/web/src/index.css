@@ -29,13 +29,13 @@
   color-scheme: dark;
   --ma-bg: #0a0f16;
   --ma-fg: #f3f6fb;
-  --ma-mute: #a9b8c9;
+  --ma-mute: #c5d4e4;
   --ma-accent: #7eafff;
   --ma-accent-hi: #9cc2ff;
   --ma-on: #0a1220;
   --ma-danger: #ff8a90;
-  --ma-line: #263140;
-  --ma-soft: #1f2a3a;
+  --ma-line: #3a4b63;
+  --ma-soft: #243044;
   --ma-tint: rgba(126, 175, 255, 0.14);
   --ma-panel: #151d28;
   --ma-glass: rgba(21, 29, 40, 0.78);
@@ -64,6 +64,12 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
+html {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 html, body, #root { height: 100%; }
 
 body {
@@ -82,6 +88,7 @@ body {
 
 @layer base {
   button, input, textarea, select { font: inherit; color: inherit; }
+  input, textarea, select { font-size: 16px; }
 }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
@@ -145,7 +152,7 @@ label.block {
   background: var(--ma-panel);
   border: 1px solid var(--ma-line);
   box-shadow: var(--ma-shadow);
-  border-radius: 16px;
+  border-radius: 20px;
 }
 .panel { transition: box-shadow 180ms var(--ma-ease), border-color 180ms var(--ma-ease); }
 .now-card { padding: 16px; }
@@ -288,7 +295,7 @@ button.row-card::after {
 .field, .input {
   height: 48px; width: 100%; min-width: 0; border-radius: 12px;
   border: 1px solid var(--ma-line); background: var(--ma-panel);
-  padding: 0 16px; font-size: 15px; outline: none; text-overflow: ellipsis;
+  padding: 0 16px; font-size: 16px; outline: none; text-overflow: ellipsis;
   box-shadow: inset 0 1px 2px rgba(16, 26, 43, 0.04);
   transition: border-color 150ms var(--ma-ease), box-shadow 150ms var(--ma-ease), background 150ms;
 }
@@ -445,7 +452,7 @@ textarea.input { height: auto; min-height: 56px; padding: 12px 16px; line-height
 .composer:focus-within { border-color: var(--ma-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ma-accent) 18%, transparent); }
 .composer textarea {
   display: block; width: 100%; resize: none; border: 0; outline: 0; background: transparent;
-  padding: 14px 56px 14px 16px; min-height: 52px; max-height: 160px; line-height: 1.5; font-size: 15px; overflow-y: auto;
+  padding: 14px 56px 14px 16px; min-height: 52px; max-height: 160px; line-height: 1.5; font-size: 16px; overflow-y: auto;
 }
 .model-pick { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--ma-mute); }
 .model-pick select {
@@ -470,21 +477,26 @@ textarea.input { height: auto; min-height: 56px; padding: 12px 16px; line-height
 .subpage { animation: sub-in 220ms var(--ma-ease, ease-out) both; }
 @keyframes sub-in { from { opacity: 0; transform: translateX(22px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .subpage { animation: none; } }
-.sub-head { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; gap: 4px; min-height: 52px; padding: 6px 12px 6px 8px; background: var(--ma-bg); }
-.sub-back { width: 38px; height: 38px; border-radius: 999px; display: grid; place-items: center; color: var(--ma-accent); flex: none; }
+.sub-head {
+  position: sticky; top: 0; z-index: 4; display: flex; align-items: center; gap: 4px; min-height: 52px;
+  padding: 8px 12px 8px 8px;
+  background: color-mix(in srgb, var(--ma-bg) 88%, transparent);
+  backdrop-filter: blur(16px);
+}
+.sub-back { width: 40px; height: 40px; border-radius: 999px; display: grid; place-items: center; color: var(--ma-accent); flex: none; transition: background 160ms var(--ma-ease); }
 .sub-back:active { background: var(--ma-tint); }
-.sub-title { margin: 0; padding: 0 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
-.sub-sub { padding-left: 4px; font-size: 12px; color: var(--ma-mute); }
-.set-cap { margin: 0 0 8px 6px; font-size: 12.5px; font-weight: 600; color: var(--ma-mute); letter-spacing: 0.02em; }
-.set-note { margin: 8px 8px 0; font-size: 12px; line-height: 1.6; color: var(--ma-mute); }
-.set-group { background: var(--ma-panel); border: 1px solid var(--ma-line); border-radius: 18px; overflow: hidden; box-shadow: var(--ma-shadow-sm); }
-.set-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 54px; padding: 10px 14px; text-align: left; color: var(--ma-fg); background: transparent; }
+.sub-title { margin: 0; padding: 0 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.2; }
+.sub-sub { padding-left: 4px; font-size: 13px; color: var(--ma-mute); }
+.set-cap { margin: 0 0 8px 8px; font-size: 13px; font-weight: 600; color: var(--ma-mute); letter-spacing: 0.01em; }
+.set-note { margin: 8px 12px 0; font-size: 13px; line-height: 1.55; color: var(--ma-mute); }
+.set-group { background: var(--ma-panel); border: 1px solid var(--ma-line); border-radius: 20px; overflow: hidden; box-shadow: var(--ma-shadow-sm); }
+.set-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 12px 16px; text-align: left; color: var(--ma-fg); background: transparent; transition: background 160ms var(--ma-ease); }
 .set-row + .set-row { border-top: 1px solid var(--ma-line); }
 button.set-row:not(:disabled):active, a.set-row:active { background: var(--ma-tint); }
 .set-row:disabled { opacity: 1; cursor: default; }
-.set-row .mark { width: 34px; height: 34px; font-size: 12px; box-shadow: none; flex: none; }
-.set-ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; flex: none; }
-.set-title { flex: 1; min-width: 0; font-size: 15.5px; font-weight: 500; }
+.set-row .mark { width: 36px; height: 36px; font-size: 13px; box-shadow: none; flex: none; }
+.set-ico { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; color: #fff; flex: none; }
+.set-title { flex: 1; min-width: 0; font-size: 16px; font-weight: 500; letter-spacing: -0.01em; }
 .set-value { max-width: 52%; font-size: 13px; color: var(--ma-mute); text-align: right; overflow-wrap: anywhere; }
 .set-chev { color: var(--ma-mute); flex: none; opacity: 0.7; }
 .switch { position: relative; width: 46px; height: 28px; border-radius: 999px; background: var(--ma-line); flex: none; transition: background 160ms; }

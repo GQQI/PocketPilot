@@ -3,7 +3,8 @@ import type { AgentChatRequest, AgentTestResult, AgentProject, AgentSession, Age
 import { Capacitor } from "@capacitor/core";
 import { migrateLegacyStorage } from "./legacy";
 import { consumeSse } from "./sse";
-import { forgetRtc, rtcConfigured, rtcFetch, rtcLanOrigin } from "./rtc";
+import { activeFetch, linkedLanOrigin } from "./link-manager";
+import { forgetRtc, rtcConfigured } from "./rtc";
 
 migrateLegacyStorage();
 
@@ -40,7 +41,7 @@ function authHeaders(): HeadersInit {
 
 /** Uses the encrypted WebRTC tunnel when this phone was paired by QR, otherwise plain HTTP to the LAN bridge. */
 function transport(path: string, init?: RequestInit): Promise<Response> {
-  if (rtcConfigured()) return rtcFetch(path, init);
+  if (rtcConfigured()) return activeFetch(path, init);
   // The Capacitor app has no host of its own: until a PC is paired, there is nothing to call.
   if (Capacitor.isNativePlatform() && !readStore(BRIDGE_KEY)) {
     return Promise.resolve(new Response(JSON.stringify({ error: "pairing required", code: "pair" }), { status: 401, headers: { "content-type": "application/json" } }));
@@ -145,7 +146,7 @@ async function stream(path: string, body: unknown, onEvent: (event: never) => vo
   const payload = JSON.stringify(body);
   const emit = (data: unknown) => onEvent(data as never);
   // Android WebView buffers fetch() until the response ends. XHR onprogress paints each SSE frame.
-  const lan = rtcConfigured() ? await rtcLanOrigin() : null;
+  const lan = rtcConfigured() ? await linkedLanOrigin() : null;
   if (rtcConfigured() && !lan) {
     const response = await transport(path, { method: "POST", headers, body: payload, signal });
     if (!response.ok) throw await toError(response);

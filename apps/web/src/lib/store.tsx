@@ -4,7 +4,7 @@ import { ApiError, api } from "./api";
 import { copy } from "./i18n";
 import { extra } from "./i18n2";
 import { more } from "./i18n3";
-import { retryLink } from "./rtc";
+import { retryLink } from "./link-manager";
 
 const AGENT_KEY = "pocketpilot.agent";
 const CACHE_PREFIX = "pocketpilot.cache.";

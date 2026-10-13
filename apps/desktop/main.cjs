@@ -15,7 +15,7 @@ for (const [key, value] of Object.entries(process.env)) {
 // Tests/dev can isolate the desktop settings + logs.
 if (process.env.POCKETPILOT_DESKTOP_USERDATA) app.setPath("userData", process.env.POCKETPILOT_DESKTOP_USERDATA);
 
-const DEFAULTS = { autoStart: false, closeToTray: true, port: 47241, allowRtc: true, allowLan: true, language: "zh", serviceEnabled: true };
+const DEFAULTS = { autoStart: false, closeToTray: true, port: 47241, allowRtc: true, allowLan: true, allowBle: true, language: "zh", serviceEnabled: true };
 const startHidden = process.argv.includes("--hidden");
 const internalToken = crypto.randomBytes(24).toString("hex");
 
@@ -39,7 +39,7 @@ function loadSettings() {
 
 function pick(input) {
   const out = {};
-  for (const key of ["autoStart", "closeToTray", "allowRtc", "allowLan", "serviceEnabled"]) if (typeof input[key] === "boolean") out[key] = input[key];
+  for (const key of ["autoStart", "closeToTray", "allowRtc", "allowLan", "allowBle", "serviceEnabled"]) if (typeof input[key] === "boolean") out[key] = input[key];
   const port = Number(input.port);
   if (Number.isInteger(port) && port >= 1024 && port <= 65535) out.port = port;
   if (input.language === "zh" || input.language === "en") out.language = input.language;
@@ -116,10 +116,11 @@ function startBridge() {
     HOST: settings.allowLan ? "0.0.0.0" : "127.0.0.1",
     POCKETPILOT_REMOTE: "1",
     POCKETPILOT_RTC: settings.allowRtc ? "1" : "0",
+    POCKETPILOT_BLE: settings.allowBle ? "1" : "0",
     POCKETPILOT_INTERNAL_TOKEN: internalToken,
     POCKETPILOT_QUIET_PAIRING: "1",
   };
-  log(`starting bridge ${bridgeEntry()} port=${settings.port} lan=${settings.allowLan} rtc=${settings.allowRtc}`);
+  log(`starting bridge ${bridgeEntry()} port=${settings.port} lan=${settings.allowLan} rtc=${settings.allowRtc} ble=${settings.allowBle}`);
   let proc;
   try {
     proc = spawn(process.execPath, [bridgeEntry()], { env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
@@ -365,7 +366,7 @@ handle("settings:set", async (patch) => {
   settings = { ...settings, ...clean };
   saveSettings();
   if ("autoStart" in clean) applyLoginItem();
-  const needsRestart = ["port", "allowRtc", "allowLan"].some((k) => k in clean && clean[k] !== before[k]);
+  const needsRestart = ["port", "allowRtc", "allowLan", "allowBle"].some((k) => k in clean && clean[k] !== before[k]);
   if (needsRestart && wanted) await restartBridge();
   broadcast();
   return snapshot();

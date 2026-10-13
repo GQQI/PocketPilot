@@ -71,23 +71,37 @@ export class SecureMux {
   receive(data: Uint8Array): void {
     this.recvQueue = this.recvQueue.then(async () => {
       try {
-        const text = new TextDecoder().decode(await this.channel.decrypt(data));
-        const frame = JSON.parse(text) as Frame;
-        if (frame.t === "frag") {
-          const list = this.fragments.get(frame.id) ?? new Array<string>(frame.n);
-          list[frame.i] = frame.d;
-          this.fragments.set(frame.id, list);
-          if (list.filter((x) => x !== undefined).length === frame.n) {
-            this.fragments.delete(frame.id);
-            this.onFrame(JSON.parse(list.join("")) as Frame);
-          }
-          return;
-        }
-        this.onFrame(frame);
+        this.pushText(new TextDecoder().decode(await this.channel.decrypt(data)));
       } catch (error) {
         this.onError(error instanceof Error ? error : new Error(String(error)));
       }
     });
+  }
+
+  /** Plaintext JSON that was decrypted by the caller (the BLE handshake peeks at the first frame to pick a key). */
+  deliverPlain(plain: Uint8Array): void {
+    this.recvQueue = this.recvQueue.then(() => {
+      try {
+        this.pushText(new TextDecoder().decode(plain));
+      } catch (error) {
+        this.onError(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  private pushText(text: string): void {
+    const frame = JSON.parse(text) as Frame;
+    if (frame.t === "frag") {
+      const list = this.fragments.get(frame.id) ?? new Array<string>(frame.n);
+      list[frame.i] = frame.d;
+      this.fragments.set(frame.id, list);
+      if (list.filter((x) => x !== undefined).length === frame.n) {
+        this.fragments.delete(frame.id);
+        this.onFrame(JSON.parse(list.join("")) as Frame);
+      }
+      return;
+    }
+    this.onFrame(frame);
   }
 }
 

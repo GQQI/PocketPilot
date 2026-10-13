@@ -35,6 +35,29 @@ curl http://127.0.0.1:47299/api/host              # 无 pairingCode, remote:true
 ### 未完成/注意
 - 远程模式下桌面本地 UI 也需要配对（不再免认证）；Electron 默认未启用远程模式。
 
+## 传输层与蓝牙
+
+手机在已扫码配对（持有 link secret）之后，按同一套策略选通道，不在请求函数里写死顺序：
+
+1. 局域网 HTTP（Wi-Fi）
+2. 加密远程通道（WebRTC + MQTT 信令）
+3. 蓝牙 BLE
+
+设置 → 通信方式可以查看当前通道，并逐项打开、关闭或改成手动。桌面端设置里的「允许蓝牙」会重启服务。
+
+蓝牙加密直接用配对密钥做 HKDF（`pocketpilot/ble/v1`），帧格式与 WebRTC 相同（AES-GCM 计数器 + req/res/chunk）。ATT 默认 20 字节一包，协商 MTU 后加大，包头是消息号、序号和总片数。
+
+桌面端没有用 `@abandonware/bleno` / `noble`：它们在 Windows 上要走 HCI 并换 WinUSB 驱动，会弄坏系统蓝牙，也不适合打进 Electron。经典 RFCOMM 能在 Windows 上跑，但手机用的是 `@capacitor-community/bluetooth-le`（GATT）。因此电脑端用 Windows 自带的 WinRT `GattServiceProvider`，由 PowerShell 辅助进程广播，不额外装驱动、也不编译原生模块。非 Windows 桌面会显示「仅 Windows」，局域网和远程通道照常。
+
+Windows 上需要：
+
+- Windows 10 1803 或更新，系统蓝牙已打开
+- 允许桌面应用使用蓝牙（Windows 11：设置 → 隐私和安全性 → 蓝牙）
+- 先扫码配对一次，蓝牙才能沿用那把密钥
+- 手机是 Android，并允许附近设备（BLUETOOTH_SCAN / BLUETOOTH_CONNECT）。扫描按服务 UUID 过滤，不申请定位
+
+云端环境没有真蓝牙电台，分包、重组、自动选择和加密通道用内存管道测过；广播和手机扫描需要在 Windows + Android 真机上确认。
+
 ## 阶段 2+3：二维码配对 + WebRTC 数据通道（已完成，见“未完成/风险”）
 
 ### 架构
