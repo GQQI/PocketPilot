@@ -12,7 +12,6 @@
 
 <p align="center">
   <a href="https://gqqi.github.io/AgentFrame/">产品网页</a> ·
-  <a href="./website/docs/guide.html">使用手册</a> ·
   <a href="./docs/使用指南.md">安装细则</a>
 </p>
 

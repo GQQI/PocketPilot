@@ -2,7 +2,7 @@
   "name": "pocketpilot",
   "private": true,
   "version": "0.1.0",
-  "description": "PocketPilot (??????): mobile-first control panel for coding-agent CLIs.",
+  "description": "PocketPilot（口袋领航）：用手机遥控电脑上的编码代理。局域网、加密远程通道和蓝牙，数据留在这台电脑。",
   "workspaces": [
     "apps/*",
     "packages/*"
