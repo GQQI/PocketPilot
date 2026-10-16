@@ -84,7 +84,7 @@ export class LocalAgents {
       available: installed && detection.auth.state !== "missing",
       auth: detection.auth,
       defaultModel: ctx.model || detection.defaultModel || meta.defaultModel,
-      models: detection.models && detection.models.length ? detection.models : [...meta.models],
+      models: [...new Set([...(detection.models && detection.models.length ? detection.models : meta.models), ...(ctx.model ? [ctx.model] : [])])],
       sessionCount,
       projectCount,
       canListSessions: agent.history,

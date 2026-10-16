@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentChatRequest, AgentSession, AgentUsage, ChatMessage, MessageBlock, StreamEvent, UsageBucket } from "@pocketpilot/protocol";
 import { baseName, cap, exists, prettyError, FileCache, findExecutable, globDirs, home, listDir, oneLine, readHead, readLines, runCapture, runStream, safeStat, startOfToday, tryJson } from "./util";
+import { catalogById } from "../catalog";
 import { childEnv, decideLogin } from "./login";
 import { codexResident, residentEnabled, ResidentStartError, warmCodex } from "./resident";
 import { dailyTotals, emptyBucket, type AgentCtx, type Detection, type LocalAgent } from "./types";
@@ -122,6 +123,35 @@ function configModel(): string {
   }
 }
 
+/** Models Codex itself knows (~/.codex/models_cache.json; hidden ones are internal), then config.toml, then recently used rollouts, then the catalog default. */
+async function codexModels(): Promise<string[]> {
+  const out: string[] = [];
+  const add = (m: unknown) => { if (typeof m === "string" && m.trim() && !out.includes(m.trim())) out.push(m.trim()); };
+  try {
+    const cache = tryJson(readFileSync(path.join(codexHome(), "models_cache.json"), "utf8"));
+    for (const m of Array.isArray(cache?.models) ? cache.models as { slug?: unknown; visibility?: unknown }[] : []) if (m.visibility !== "hide") add(m.slug);
+  } catch { /* no cache yet */ }
+  add(configModel());
+  for (const e of rollouts().sort((x, y) => y.mtime - x.mtime).slice(0, 20)) add(await rolloutModel(e.file));
+  add(catalogById("codex")?.defaultModel);
+  return out;
+}
+
+const modelCache = new FileCache<string>();
+async function rolloutModel(file: string): Promise<string> {
+  return modelCache.get(file, async () => {
+    let n = 0;
+    for await (const line of readLines(file)) {
+      if (line.includes('"turn_context"')) {
+        const p = tryJson(line)?.payload as { model?: unknown } | undefined;
+        if (typeof p?.model === "string") return p.model;
+      }
+      if (++n > 80) break;
+    }
+    return "";
+  });
+}
+
 function configProjects(): string[] {
   try {
     const out: string[] = [];
@@ -167,7 +197,7 @@ export const codexAgent: LocalAgent = {
       absentNote: ctx.locale === "en" ? "codex was not found and no backup key is saved." : "未找到 codex，也没有备用密钥。",
     });
     const auth = decision.auth;
-    return { cliPath: found, version: version ? cap(version, 80) : null, hasHistory: rollouts().length > 0, auth, dataPath: sessionsRoot(), defaultModel: configModel() };
+    return { cliPath: found, version: version ? cap(version, 80) : null, hasHistory: rollouts().length > 0, auth, dataPath: sessionsRoot(), defaultModel: configModel(), models: await codexModels() };
   },
 
   async sessions(): Promise<AgentSession[]> {
@@ -376,7 +406,10 @@ function explain(raw: string, ctx: AgentCtx): string {
   if (/not supported when using Codex with a ChatGPT account/i.test(message)) {
     return ctx.locale === "en" ? `${message} Pick another model for this chat or change "model" in ~/.codex/config.toml.` : `${message}。请在这次对话里换一个模型，或修改 ~/.codex/config.toml 里的 model。`;
   }
-  if (/login|sign in|unauthor|api key|401|auth/i.test(message)) {
+  if (/model/i.test(message) && /unsupported|not supported|does not exist|not found|unknown model|invalid model|no access|not available/i.test(message)) {
+    return ctx.locale === "en" ? `${cap(message, 400)} Pick another model for this chat (or type one in Settings), and update Codex with "npm i -g @openai/codex" if this model is new.` : `${cap(message, 400)} 请在对话里换一个模型（或在设置里手动输入），如果这是新模型，请先运行 npm i -g @openai/codex 更新 Codex。`;
+  }
+  if (/login|sign in|unauthor|api key|401|\bauth(?:entication|orization)?\b/i.test(message)) {
     return ctx.locale === "en" ? `Codex is not signed in: run "codex login" on the PC. (${cap(message, 200)})` : `Codex 未登录：请在电脑上运行 codex login，或在设置里填写 OPENAI_API_KEY。（${cap(message, 200)}）`;
   }
   return cap(message, 600);
